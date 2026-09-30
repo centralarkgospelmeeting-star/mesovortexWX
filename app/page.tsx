@@ -33,6 +33,7 @@ type Observation = {
 
 export default function Page() {
   const [product, setProduct] = useState<'ref' | 'vel' | 'srvel' | 'dualpol' | 'et' | 'vil'>('ref');
+  const [radarSite, setRadarSite] = useState('KOUN');
   const [status, setStatus] = useState('LIVE • NEXRAD + DOW');
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [observations, setObservations] = useState<Observation[]>([]);
@@ -73,7 +74,12 @@ export default function Page() {
       {alerts.length > 0 && <AlertBanner alert={alerts[0]} />}
 
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar product={product} setProduct={setProduct} />
+        <Sidebar
+          product={product}
+          setProduct={setProduct}
+          radarSite={radarSite}
+          setRadarSite={setRadarSite}
+        />
 
         <section className="flex flex-1 flex-col">
           <header className="flex items-center justify-between border-b border-slate-800 bg-slate-950/90 px-6 py-4 backdrop-blur">
@@ -82,6 +88,7 @@ export default function Page() {
                 MesoVortexWX
               </div>
               <div className="text-sm font-medium text-cyan-300">{products[product]}</div>
+              <div className="text-xs text-slate-400">Site: {radarSite}</div>
             </div>
 
             <div className="flex items-center gap-3">
@@ -103,7 +110,7 @@ export default function Page() {
           </header>
 
           <div className="relative flex-1 overflow-hidden">
-            <RadarMap product={product} isLooping={isLooping} />
+            <RadarMap product={product} isLooping={isLooping} radarSite={radarSite} />
 
             <div className="absolute bottom-6 left-6 z-[500] w-72 rounded-3xl border border-slate-700 bg-slate-950/85 p-4 shadow-2xl backdrop-blur-xl">
               <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-300">
