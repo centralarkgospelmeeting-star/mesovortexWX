@@ -1,0 +1,88 @@
+name: Repair paths and build Windows installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.repair.outputs.commit }}
+    steps:
+      - name: Repair malformed filenames
+        id: repair
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp
+          rm -rf repairrepo
+          mkdir repairrepo
+          cd repairrepo
+          git init
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.extraheader=AUTHORIZATION: basic ${auth}" fetch --no-tags origin refs/heads/main
+          parent="$(git rev-parse FETCH_HEAD)"
+          git read-tree "$parent"
+
+          python3 - <<'PY'
+          import subprocess, os
+
+          out = subprocess.check_output(["git", "ls-files", "-z"])
+          paths = [p for p in out.split(b"\0") if p]
+
+          odd = [p for p in paths if b"\n" in p or b"\r" in p]
+          targets = [p for p in odd if p.startswith(b"app/globals.css\n@tailwind base;") and b"@tailwind utilities;" in p]
+
+          if b"app/globals.css" not in paths:
+              raise SystemExit("Safety check failed: real app/globals.css missing.")
+
+          if len(targets) != 2:
+              print("Malformed paths found:")
+              for p in odd:
+                  print(repr(p))
+              raise SystemExit("Expected exactly two malformed globals.css paths only.")
+
+          for path in targets:
+              print("Removing malformed path:", repr(path))
+              subprocess.run(["git", "update-index", "--force-remove", "--", path], check=True)
+          PY
+
+          tree="$(git write-tree)"
+          commit="$(git -c user.name='GitHub Actions' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit-tree "$tree" -p "$parent" -m 'Remove malformed globals.css paths')"
+          git -c "http.extraheader=AUTHORIZATION: basic ${auth}" push origin "${commit}:refs/heads/main"
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: repair
+    runs-on: windows-latest
+    steps:
+      - name: Check out repaired source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.repair.outputs.commit }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Windows installer
+        run: npm run dist:windows
+
+      - name: Publish installer to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mesovortexwx-desktop-${{ github.run_id }}
+          name: MesoVortexWX Windows installer ${{ github.run_number }}
+          target_commitish: ${{ needs.repair.outputs.commit }}
+          files: dist/MesoVortexWX-Setup.exe
