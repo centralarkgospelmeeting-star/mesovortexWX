@@ -1,0 +1,36 @@
+name: Build Windows installer
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build installer
+        run: npm run dist:windows
+
+      - name: Publish installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mesovortexwx-desktop-${{ github.run_number }}
+          name: MesoVortexWX Windows build ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          files: dist/MesoVortexWX-Setup.exe
