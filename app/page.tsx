@@ -1,10 +1,15 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
-import { RadarMap } from '../components/RadarMap';
 import { Sidebar } from '../components/Sidebar';
 import { AlertBanner } from '../components/AlertBanner';
 import { METARPanel } from '../components/METARPanel';
+
+const RadarMap = dynamic(
+  () => import('../components/RadarMap').then((module) => module.RadarMap),
+  { ssr: false, loading: () => <div className="h-full w-full bg-slate-950" /> }
+);
 
 const products = {
   ref: 'Base Reflectivity • 0.5° Tilt',
@@ -40,25 +45,21 @@ export default function Page() {
   const [isLooping, setIsLooping] = useState(false);
 
   useEffect(() => {
-    // Fetch radar status
     fetch('/api/radar')
       .then((res) => res.json())
       .then((data) => setStatus(data.status || 'LIVE • NEXRAD + DOW'))
       .catch(() => setStatus('LIVE • NEXRAD + DOW'));
 
-    // Fetch weather alerts
     fetch('/api/alerts')
       .then((res) => res.json())
       .then((data) => setAlerts(data.alerts || []))
       .catch(() => setAlerts([]));
 
-    // Fetch METAR observations
     fetch('/api/metar')
       .then((res) => res.json())
       .then((data) => setObservations(data.observations || []))
       .catch(() => setObservations([]));
 
-    // Refresh every 5 minutes
     const interval = setInterval(() => {
       fetch('/api/alerts')
         .then((res) => res.json())
