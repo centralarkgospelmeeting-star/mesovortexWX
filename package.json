@@ -40,7 +40,7 @@
     "directories": { "output": "dist" },
     "files": ["desktop/**/*", "package.json", ".next/standalone/**/*"],
     "win": {
-      "icon": "build/logo.svg",
+      "icon": "icon.ico",
       "target": ["nsis"],
       "artifactName": "MesoVortexWX-Setup.exe"
     },
