@@ -39,7 +39,11 @@
     "asar": false,
     "directories": { "output": "dist" },
     "files": ["desktop/**/*", "package.json", ".next/standalone/**/*"],
-    "win": { "target": ["nsis"], "artifactName": "MesoVortexWX-Setup.exe" },
+    "win": {
+      "icon": "build/logo.svg",
+      "target": ["nsis"],
+      "artifactName": "MesoVortexWX-Setup.exe"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
