@@ -12,50 +12,51 @@ jobs:
     outputs:
       commit: ${{ steps.repair.outputs.commit }}
     steps:
-      - name: Repair malformed filenames
+      - name: Repair malformed filenames when present
         id: repair
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          cd /tmp
-          rm -rf repairrepo
-          mkdir repairrepo
-          cd repairrepo
+          mkdir repo
+          cd repo
           git init
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-
           auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           git -c "http.extraheader=AUTHORIZATION: basic ${auth}" fetch --no-tags origin refs/heads/main
           parent="$(git rev-parse FETCH_HEAD)"
           git read-tree "$parent"
 
           python3 - <<'PY'
-          import subprocess, os
+          import subprocess
 
-          out = subprocess.check_output(["git", "ls-files", "-z"])
-          paths = [p for p in out.split(b"\0") if p]
-
-          odd = [p for p in paths if b"\n" in p or b"\r" in p]
-          targets = [p for p in odd if p.startswith(b"app/globals.css\n@tailwind base;") and b"@tailwind utilities;" in p]
+          output = subprocess.check_output([b"git", b"ls-files", b"-z"])
+          paths = output.split(b"\0")[:-1]
+          odd = [path for path in paths if b"\n" in path or b"\r" in path]
+          targets = [
+              path for path in odd
+              if path.startswith(b"app/globals.css\n@tailwind base;")
+              and b"@tailwind utilities;" in path
+          ]
 
           if b"app/globals.css" not in paths:
-              raise SystemExit("Safety check failed: real app/globals.css missing.")
-
-          if len(targets) != 2:
-              print("Malformed paths found:")
-              for p in odd:
-                  print(repr(p))
-              raise SystemExit("Expected exactly two malformed globals.css paths only.")
+              raise SystemExit("Safety check failed: the real app/globals.css is missing.")
+          if odd and (len(targets) != 2 or set(targets) != set(odd)):
+              print("Unexpected newline-containing paths:")
+              for path in odd:
+                  print(repr(path))
+              raise SystemExit("Safety check failed; no repository files were changed.")
 
           for path in targets:
               print("Removing malformed path:", repr(path))
-              subprocess.run(["git", "update-index", "--force-remove", "--", path], check=True)
+              subprocess.run([b"git", b"update-index", b"--force-remove", b"--", path], check=True)
+          if not targets:
+              print("No malformed paths remain; proceeding with build.")
           PY
 
           tree="$(git write-tree)"
-          commit="$(git -c user.name='GitHub Actions' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit-tree "$tree" -p "$parent" -m 'Remove malformed globals.css paths')"
+          commit="$(git -c user.name='GitHub Actions' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit-tree "$tree" -p "$parent" -m 'Remove malformed globals.css paths when present')"
           git -c "http.extraheader=AUTHORIZATION: basic ${auth}" push origin "${commit}:refs/heads/main"
           echo "commit=${commit}" >> "$GITHUB_OUTPUT"
 
