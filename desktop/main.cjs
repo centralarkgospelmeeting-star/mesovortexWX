@@ -5,13 +5,22 @@ const PORT = '3217';
 const APP_URL = `http://127.0.0.1:${PORT}`;
 let serverProcess;
 let mainWindow;
+let serverOutput = '';
+let serverExitDetails = '';
 
 app.setAppUserModelId('org.mesovortexwx.desktop');
 
+function appendServerOutput(source, chunk) {
+  const text = chunk.toString().trim();
+  if (!text) return;
+  serverOutput = `${serverOutput}\n[${source}] ${text}`.slice(-8000);
+}
+
 async function waitForServer() {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (serverProcess && serverProcess.exitCode !== null) {
-      throw new Error('The local weather app server stopped unexpectedly.');
+    if (serverProcess && serverProcess.exitCode != null) {
+      const details = serverOutput || serverExitDetails || 'The server process exited without reporting an error.';
+      throw new Error(`The local weather app server stopped unexpectedly.\n\n${details}`);
     }
     try {
       const response = await fetch(APP_URL);
@@ -21,7 +30,8 @@ async function waitForServer() {
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error('The local weather app server did not start in time.');
+  const details = serverOutput || 'No server output was captured.';
+  throw new Error(`The local weather app server did not start in time.\n\n${details}`);
 }
 
 async function createWindow() {
@@ -34,8 +44,17 @@ async function createWindow() {
       HOSTNAME: '127.0.0.1',
       NODE_ENV: 'production'
     },
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
     serviceName: 'MesoVortexWX Server'
+  });
+
+  serverProcess.stdout?.on('data', (chunk) => appendServerOutput('stdout', chunk));
+  serverProcess.stderr?.on('data', (chunk) => appendServerOutput('stderr', chunk));
+  serverProcess.on('error', (error) => {
+    serverExitDetails = `Failed to launch the server process: ${error.message}`;
+  });
+  serverProcess.on('exit', (code) => {
+    serverExitDetails = `Server process exited with code ${code}.`;
   });
 
   try {
@@ -43,7 +62,7 @@ async function createWindow() {
   } catch (error) {
     dialog.showErrorBox(
       'MesoVortexWX could not start',
-      `${error.message}\n\nRestart the app. If the problem continues, reinstall MesoVortexWX.`
+      `${error.message}\n\nPlease send this full message to support. It contains the startup diagnostic.`
     );
     app.quit();
     return;
@@ -79,5 +98,5 @@ app.whenReady().then(createWindow).catch((error) => {
 
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', () => {
-  if (serverProcess && serverProcess.exitCode === null) serverProcess.kill();
+  if (serverProcess && serverProcess.exitCode == null) serverProcess.kill();
 });
