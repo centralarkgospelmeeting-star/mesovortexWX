@@ -2,148 +2,115 @@
 
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
-import { Sidebar } from '../components/Sidebar';
 import { AlertBanner } from '../components/AlertBanner';
-import { METARPanel } from '../components/METARPanel';
+import { RADAR_PRODUCTS, RADAR_SITES } from '../lib/radar-config';
 
 const RadarMap = dynamic(
   () => import('../components/RadarMap').then((module) => module.RadarMap),
-  { ssr: false, loading: () => <div className="h-full w-full bg-slate-950" /> }
+  { ssr: false, loading: () => <div className="h-full w-full animate-pulse bg-[#18212d]" /> }
 );
 
-const products = {
-  ref: 'Base Reflectivity • 0.5° Tilt',
-  vel: 'Base Velocity',
-  srvel: 'Storm Relative Velocity',
-  dualpol: 'Dual-Pol (ZDR / CC / KDP)',
-  et: 'Echo Tops',
-  vil: 'Vertically Integrated Liquid'
-};
+type RadarProduct = 'ref' | 'vel' | 'srvel' | 'dualpol' | 'et' | 'vil';
+type AlertItem = { id: string; headline: string; severity: string; area: string; sent: string };
 
-type AlertItem = {
-  id: string;
-  headline: string;
-  severity: string;
-  area: string;
-  sent: string;
-};
-
-type Observation = {
-  station: string;
-  text: string;
-  temp: string;
-  dewpoint: string;
-  wind: string;
-};
+const tabs = ['Radar', 'Composite', 'Satellite', 'Outlooks'];
 
 export default function Page() {
-  const [product, setProduct] = useState<'ref' | 'vel' | 'srvel' | 'dualpol' | 'et' | 'vil'>('ref');
+  const [product, setProduct] = useState<RadarProduct>('ref');
   const [radarSite, setRadarSite] = useState('KOUN');
-  const [status, setStatus] = useState('LIVE • NEXRAD + DOW');
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [observations, setObservations] = useState<Observation[]>([]);
   const [isLooping, setIsLooping] = useState(false);
+  const selectedProduct = RADAR_PRODUCTS.find((item) => item.key === product);
+  const selectedSite = RADAR_SITES.find((site) => site.id === radarSite);
 
   useEffect(() => {
-    fetch('/api/radar')
-      .then((res) => res.json())
-      .then((data) => setStatus(data.status || 'LIVE • NEXRAD + DOW'))
-      .catch(() => setStatus('LIVE • NEXRAD + DOW'));
-
-    fetch('/api/alerts')
+    const loadAlerts = () => fetch('/api/alerts')
       .then((res) => res.json())
       .then((data) => setAlerts(data.alerts || []))
       .catch(() => setAlerts([]));
-
-    fetch('/api/metar')
-      .then((res) => res.json())
-      .then((data) => setObservations(data.observations || []))
-      .catch(() => setObservations([]));
-
-    const interval = setInterval(() => {
-      fetch('/api/alerts')
-        .then((res) => res.json())
-        .then((data) => setAlerts(data.alerts || []))
-        .catch(() => {});
-    }, 300000);
-
+    loadAlerts();
+    const interval = setInterval(loadAlerts, 300000);
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <main className="flex h-screen flex-col bg-slate-950 text-white">
-      {alerts.length > 0 && <AlertBanner alert={alerts[0]} />}
+    <main className="radar-app">
+      <header className="radar-toolbar">
+        <a className="brand" href="/" aria-label="MesoVortexWX home">
+          <span className="brand-mark" aria-hidden="true"><span>Ｍ</span></span>
+          <span className="brand-name">MesoVortex<span>WX</span></span>
+        </a>
 
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar
-          product={product}
-          setProduct={setProduct}
-          radarSite={radarSite}
-          setRadarSite={setRadarSite}
-        />
+        <nav className="mode-tabs" aria-label="Weather layers">
+          {tabs.map((tab) => (
+            <button
+              key={tab}
+              className={`mode-tab ${tab === 'Radar' ? 'active' : ''}`}
+              type="button"
+              disabled={tab !== 'Radar'}
+              title={tab === 'Radar' ? 'Current radar view' : `${tab} view is coming soon`}
+            >
+              {tab}
+              {tab !== 'Radar' && <span className="soon-mark">Soon</span>}
+            </button>
+          ))}
+        </nav>
 
-        <section className="flex flex-1 flex-col">
-          <header className="flex items-center justify-between border-b border-slate-800 bg-slate-950/90 px-6 py-4 backdrop-blur">
-            <div className="flex items-center gap-4">
-              <div className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">
-                MesoVortexWX
-              </div>
-              <div className="text-sm font-medium text-cyan-300">{products[product]}</div>
-              <div className="text-xs text-slate-400">Site: {radarSite}</div>
-            </div>
+        <div className="toolbar-actions">
+          <label className="site-picker" aria-label="Select radar site">
+            <span className="site-dot" />
+            <select value={radarSite} onChange={(event) => setRadarSite(event.target.value)}>
+              {RADAR_SITES.map((site) => <option key={site.id} value={site.id}>{site.id} · {site.name}</option>)}
+            </select>
+          </label>
+          <span className="live-indicator"><i /> LIVE</span>
+        </div>
+      </header>
 
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-sm text-emerald-400">
-                <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
-                {status}
-              </div>
-              <button
-                onClick={() => setIsLooping(!isLooping)}
-                className={`rounded-2xl px-5 py-2 text-sm font-medium transition ${
-                  isLooping
-                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                    : 'border border-slate-700 bg-slate-800 hover:bg-white hover:text-slate-900'
-                }`}
-              >
-                {isLooping ? '⏹ Stop Loop' : '▶ Loop Animation'}
-              </button>
-            </div>
-          </header>
+      {alerts.length > 0 && <div className="map-alert"><AlertBanner alert={alerts[0]} /></div>}
 
-          <div className="relative flex-1 overflow-hidden">
-            <RadarMap product={product} isLooping={isLooping} radarSite={radarSite} />
+      <section className="map-canvas" aria-label="Interactive weather radar map">
+        <RadarMap product={product} isLooping={isLooping} radarSite={radarSite} />
 
-            <div className="absolute bottom-6 left-6 z-[500] w-72 rounded-3xl border border-slate-700 bg-slate-950/85 p-4 shadow-2xl backdrop-blur-xl">
-              <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-300">
-                Reflectivity (dBZ)
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-200">
-                <div className="h-5 rounded bg-cyan-400/70" />
-                <div className="flex items-center justify-end">-10</div>
-                <div className="h-5 rounded bg-blue-500/70" />
-                <div className="flex items-center justify-end">15</div>
-                <div className="h-5 rounded bg-emerald-500/70" />
-                <div className="flex items-center justify-end">25</div>
-                <div className="h-5 rounded bg-yellow-400/80" />
-                <div className="flex items-center justify-end">35</div>
-                <div className="h-5 rounded bg-orange-500/80" />
-                <div className="flex items-center justify-end">45</div>
-                <div className="h-5 rounded bg-red-500/80" />
-                <div className="flex items-center justify-end">60+</div>
-              </div>
-            </div>
+        <div className="map-location-chip">
+          <strong>{selectedSite?.name ?? 'Radar site'}</strong>
+          <span>{radarSite} · NEXRAD</span>
+        </div>
 
-            <div className="absolute bottom-6 right-6 z-[500] rounded-3xl border border-slate-700 bg-slate-950/85 p-4 shadow-2xl backdrop-blur-xl">
-              <input type="range" min="0" max="120" defaultValue="60" className="w-72 accent-cyan-400" />
-              <div className="mt-2 text-center text-[10px] uppercase tracking-[0.2em] text-slate-400">00:00 — 02:00 UTC</div>
-            </div>
+        <div className="map-tools" aria-label="Map controls">
+          <button type="button" title="Zoom in" onClick={() => window.dispatchEvent(new CustomEvent('mesovortex:zoom', { detail: 1 }))}>＋</button>
+          <button type="button" title="Zoom out" onClick={() => window.dispatchEvent(new CustomEvent('mesovortex:zoom', { detail: -1 }))}>−</button>
+          <span />
+          <button type="button" title="Center on Oklahoma City" onClick={() => window.dispatchEvent(new Event('mesovortex:reset'))}>◎</button>
+        </div>
+
+        <div className="radar-panel">
+          <div className="panel-heading">
+            <div><span className="eyebrow">RADAR PRODUCT</span><strong>{selectedProduct?.label ?? 'Reflectivity'}</strong></div>
+            <span className="product-dot" />
           </div>
-        </section>
+          <select className="product-picker" value={product} onChange={(event) => setProduct(event.target.value as RadarProduct)} aria-label="Radar product">
+            {RADAR_PRODUCTS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+          </select>
+          <div className="legend-title">Reflectivity · dBZ</div>
+          <div className="legend-bar" />
+          <div className="legend-values"><span>-10</span><span>15</span><span>25</span><span>35</span><span>45</span><span>60+</span></div>
+          <div className="panel-footnote">{selectedSite?.name ?? radarSite} radar · Updated live</div>
+        </div>
 
-        <aside className="w-[320px] border-l border-slate-800 bg-slate-950 overflow-y-auto">
-          <METARPanel observations={observations} />
-        </aside>
-      </div>
+        <div className="map-attribution-note">Map data © OpenStreetMap contributors · Radar imagery © RainViewer</div>
+
+        <div className="timeline-bar">
+          <button className={`play-button ${isLooping ? 'playing' : ''}`} type="button" onClick={() => setIsLooping((value) => !value)} aria-label={isLooping ? 'Stop radar loop' : 'Play radar loop'}>
+            {isLooping ? 'Ⅱ' : '▶'}
+          </button>
+          <div className="timeline-content">
+            <div className="timeline-labels"><span>{isLooping ? 'RADAR LOOP PLAYING' : 'RADAR LOOP'}</span><span>Latest scan</span></div>
+            <div className={`timeline-track ${isLooping ? 'is-playing' : ''}`}><i /><i /><i /><i /><i /><i /><i /><b /></div>
+          </div>
+          <span className="timeline-time">NOW</span>
+        </div>
+      </section>
     </main>
   );
 }
