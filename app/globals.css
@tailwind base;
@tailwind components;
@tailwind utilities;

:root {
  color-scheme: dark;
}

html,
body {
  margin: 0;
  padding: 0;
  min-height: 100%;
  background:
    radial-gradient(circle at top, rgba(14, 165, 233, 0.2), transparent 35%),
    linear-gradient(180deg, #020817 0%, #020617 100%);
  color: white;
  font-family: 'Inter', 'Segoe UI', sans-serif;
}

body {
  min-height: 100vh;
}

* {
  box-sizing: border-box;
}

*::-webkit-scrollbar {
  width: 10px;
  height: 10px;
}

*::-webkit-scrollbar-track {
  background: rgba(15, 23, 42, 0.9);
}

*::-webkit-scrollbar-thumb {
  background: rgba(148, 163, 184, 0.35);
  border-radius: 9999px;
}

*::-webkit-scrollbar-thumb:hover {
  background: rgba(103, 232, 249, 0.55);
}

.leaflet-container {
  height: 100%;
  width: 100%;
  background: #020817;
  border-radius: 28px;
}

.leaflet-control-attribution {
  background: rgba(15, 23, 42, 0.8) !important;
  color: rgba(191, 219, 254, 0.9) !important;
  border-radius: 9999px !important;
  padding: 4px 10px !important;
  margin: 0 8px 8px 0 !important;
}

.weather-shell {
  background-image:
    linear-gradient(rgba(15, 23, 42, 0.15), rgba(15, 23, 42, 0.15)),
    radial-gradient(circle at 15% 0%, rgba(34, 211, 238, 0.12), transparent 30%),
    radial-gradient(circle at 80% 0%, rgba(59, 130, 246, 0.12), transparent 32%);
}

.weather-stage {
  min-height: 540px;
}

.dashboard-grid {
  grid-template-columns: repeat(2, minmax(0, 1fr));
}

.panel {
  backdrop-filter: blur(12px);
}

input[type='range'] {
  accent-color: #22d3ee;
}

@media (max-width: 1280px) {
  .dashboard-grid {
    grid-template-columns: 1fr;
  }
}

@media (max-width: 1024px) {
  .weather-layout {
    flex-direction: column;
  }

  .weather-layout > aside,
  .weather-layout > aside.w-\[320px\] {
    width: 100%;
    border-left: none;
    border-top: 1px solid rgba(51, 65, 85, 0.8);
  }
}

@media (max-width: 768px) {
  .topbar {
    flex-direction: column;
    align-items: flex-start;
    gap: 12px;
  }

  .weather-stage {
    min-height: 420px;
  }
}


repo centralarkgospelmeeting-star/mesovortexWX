@@ -1,0 +1,308 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { RadarMap } from '../components/RadarMap';
+import { Sidebar } from '../components/Sidebar';
+import { AlertBanner } from '../components/AlertBanner';
+import { METARPanel } from '../components/METARPanel';
+
+const products = {
+  ref: 'Base Reflectivity • 0.5° Tilt',
+  vel: 'Base Velocity',
+  srvel: 'Storm Relative Velocity',
+  dualpol: 'Dual-Pol (ZDR / CC / KDP)',
+  et: 'Echo Tops',
+  vil: 'Vertically Integrated Liquid'
+};
+
+const riskLevels = [
+  { label: 'Tornado', score: 'Moderate', value: 48 },
+  { label: 'Wind', score: 'High', value: 72 },
+  { label: 'Hail', score: 'Elevated', value: 61 },
+  { label: 'Flash Flood', score: 'Moderate', value: 54 }
+];
+
+const insightCards = [
+  { label: 'Feels Like', value: '78°F', detail: 'Humid, but cooling after sunset' },
+  { label: 'Dew Point', value: '71°F', detail: 'Moisture surge remains strong' },
+  { label: 'Wind', value: '15 kt', detail: 'SE • gusting to 22 kt' },
+  { label: 'Pressure', value: '29.84 in', detail: 'Falling slowly with convection' },
+  { label: 'Rain Chance', value: '62%', detail: 'Afternoon clusters likely' },
+  { label: 'Visibility', value: '9.5 mi', detail: 'Hazy with isolated showers' }
+];
+
+const modelCards = [
+  { name: 'HRRR', trend: '+8%', confidence: '88%', notes: 'Strong convection near I-35' },
+  { name: 'NAM', trend: '+5%', confidence: '81%', notes: 'Storm motion shifts east by 20 mi' },
+  { name: 'RAP', trend: '+11%', confidence: '90%', notes: 'Fastest initiation timing' },
+  { name: 'ECMWF', trend: '+3%', confidence: '76%', notes: 'Broader mesoscale pattern' }
+];
+
+const stormReports = [
+  { user: '@ChaseTexas', text: 'Large hail reported near Childress, TX', time: '2m ago', tone: 'bg-red-500/15 text-red-200' },
+  { user: '@VortexHunt', text: 'Rotation increasing – possible TVS on the west side', time: '7m ago', tone: 'bg-orange-500/15 text-orange-200' },
+  { user: '@NorthShoreWx', text: 'Shelf cloud approaching the metro corridor', time: '12m ago', tone: 'bg-cyan-500/15 text-cyan-200' }
+];
+
+type AlertItem = {
+  id: string;
+  headline: string;
+  severity: string;
+  area: string;
+  sent: string;
+};
+
+type Observation = {
+  station: string;
+  text: string;
+  temp: string;
+  dewpoint: string;
+  wind: string;
+};
+
+export default function Page() {
+  const [product, setProduct] = useState<'ref' | 'vel' | 'srvel' | 'dualpol' | 'et' | 'vil'>('ref');
+  const [radarSite, setRadarSite] = useState('KOUN');
+  const [status, setStatus] = useState('LIVE • NEXRAD + DOW');
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [observations, setObservations] = useState<Observation[]>([]);
+  const [isLooping, setIsLooping] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/radar')
+      .then((res) => res.json())
+      .then((data) => setStatus(data.status || 'LIVE • NEXRAD + DOW'))
+      .catch(() => setStatus('LIVE • NEXRAD + DOW'));
+
+    fetch('/api/alerts')
+      .then((res) => res.json())
+      .then((data) => setAlerts(data.alerts || []))
+      .catch(() => setAlerts([]));
+
+    fetch('/api/metar')
+      .then((res) => res.json())
+      .then((data) => setObservations(data.observations || []))
+      .catch(() => setObservations([]));
+
+    const interval = setInterval(() => {
+      fetch('/api/alerts')
+        .then((res) => res.json())
+        .then((data) => setAlerts(data.alerts || []))
+        .catch(() => {});
+    }, 300000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <main className="weather-shell min-h-screen bg-slate-950 text-white">
+      {alerts.length > 0 && <AlertBanner alert={alerts[0]} />}
+
+      <div className="weather-layout flex min-h-screen">
+        <Sidebar
+          product={product}
+          setProduct={setProduct}
+          radarSite={radarSite}
+          setRadarSite={setRadarSite}
+        />
+
+        <section className="flex flex-1 flex-col overflow-hidden">
+          <header className="topbar flex items-center justify-between border-b border-slate-800/80 bg-slate-950/80 px-6 py-4 backdrop-blur-xl">
+            <div className="flex items-center gap-4">
+              <div className="rounded-full bg-gradient-to-r from-cyan-500 to-indigo-600 px-4 py-2 text-[10px] font-black uppercase tracking-[0.28em] text-white shadow-lg shadow-cyan-500/20">
+                MesoVortexWX
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(74,222,128,0.95)]" />
+                <span className="text-sm font-medium text-cyan-300">{products[product]}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300">
+                Site: {radarSite}
+              </div>
+              <div className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-300">
+                <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
+                {status}
+              </div>
+              <button
+                onClick={() => setIsLooping(!isLooping)}
+                className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition ${
+                  isLooping
+                    ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400'
+                    : 'border border-slate-700 bg-slate-900 text-slate-200 hover:border-cyan-500 hover:text-cyan-200'
+                }`}
+              >
+                {isLooping ? 'Stop loop' : 'Loop animation'}
+              </button>
+            </div>
+          </header>
+
+          <div className="flex flex-1 flex-col overflow-y-auto p-5">
+            <div className="weather-stage relative mb-5 overflow-hidden rounded-[28px] border border-slate-800 bg-slate-900 shadow-2xl shadow-slate-950/50">
+              <RadarMap product={product} isLooping={isLooping} radarSite={radarSite} />
+
+              <div className="absolute left-5 top-5 z-[500] flex items-center gap-2 rounded-full border border-cyan-500/30 bg-slate-950/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200 backdrop-blur-xl">
+                <span className="inline-block h-2 w-2 rounded-full bg-cyan-400" />
+                radar live
+              </div>
+
+              <div className="absolute right-5 top-5 z-[500] flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/80 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-200 backdrop-blur-xl">
+                <span>Now</span>
+                <span className="text-cyan-300">14:28 UTC</span>
+              </div>
+
+              <div className="absolute bottom-5 left-5 z-[500] w-[260px] rounded-2xl border border-slate-700 bg-slate-950/80 p-4 shadow-2xl backdrop-blur-xl">
+                <div className="mb-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
+                  <span>Reflectivity</span>
+                  <span className="text-cyan-300">dBZ</span>
+                </div>
+                <div className="grid grid-cols-[1fr_auto] gap-2 text-[11px] text-slate-200">
+                  {[
+                    { color: 'bg-cyan-400/80', value: '-10' },
+                    { color: 'bg-blue-500/80', value: '15' },
+                    { color: 'bg-emerald-500/80', value: '25' },
+                    { color: 'bg-yellow-400/80', value: '35' },
+                    { color: 'bg-orange-500/80', value: '45' },
+                    { color: 'bg-red-500/80', value: '60+' }
+                  ].map((item) => (
+                    <>
+                      <div key={item.value} className={`h-5 rounded ${item.color}`} />
+                      <div key={`${item.value}-label`} className="flex items-center justify-end text-slate-300">{item.value}</div>
+                    </>
+                  ))}
+                </div>
+              </div>
+
+              <div className="absolute bottom-5 right-5 z-[500] w-[280px] rounded-2xl border border-slate-700 bg-slate-950/80 p-4 shadow-2xl backdrop-blur-xl">
+                <div className="mb-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  <span>Loop</span>
+                  <span className="text-cyan-300">00:00 — 02:00 UTC</span>
+                </div>
+                <input type="range" min="0" max="120" defaultValue="60" className="w-full accent-cyan-400" />
+              </div>
+            </div>
+
+            <div className="dashboard-grid grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+              <div className="panel rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-slate-950/40">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">Nowcast summary</div>
+                    <h2 className="mt-2 text-2xl font-bold text-white">Severe weather outlook</h2>
+                  </div>
+                  <button className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
+                    AI briefing
+                  </button>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  {insightCards.map((card) => (
+                    <div key={card.label} className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                      <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{card.label}</div>
+                      <div className="mt-3 text-2xl font-bold text-white">{card.value}</div>
+                      <div className="mt-2 text-xs text-slate-300">{card.detail}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="panel rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-slate-950/40">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">Risk score</div>
+                    <h2 className="mt-2 text-2xl font-bold text-white">Personal weather risk</h2>
+                  </div>
+                  <div className="rounded-full bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-300">7.4 / 10</div>
+                </div>
+
+                <div className="space-y-4">
+                  {riskLevels.map((risk) => (
+                    <div key={risk.label}>
+                      <div className="mb-2 flex items-center justify-between text-sm text-slate-200">
+                        <span>{risk.label}</span>
+                        <span className="font-semibold text-cyan-300">{risk.score}</span>
+                      </div>
+                      <div className="h-2.5 rounded-full bg-slate-800">
+                        <div
+                          className={`h-full rounded-full ${
+                            risk.score === 'High'
+                              ? 'bg-red-500'
+                              : risk.score === 'Moderate'
+                                ? 'bg-amber-500'
+                                : risk.score === 'Elevated'
+                                  ? 'bg-orange-500'
+                                  : 'bg-cyan-500'
+                          }`}
+                          style={{ width: `${risk.value}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="panel rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-slate-950/40">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">Model comparison</div>
+                    <h2 className="mt-2 text-2xl font-bold text-white">Forecast confidence</h2>
+                  </div>
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300">Updated 3 min ago</div>
+                </div>
+
+                <div className="space-y-3">
+                  {modelCards.map((model) => (
+                    <div key={model.name} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="font-semibold text-cyan-300">{model.name}</span>
+                        <span className="text-xs text-slate-300">{model.trend}</span>
+                      </div>
+                      <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
+                        <span>Confidence</span>
+                        <span className="font-semibold text-emerald-300">{model.confidence}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-slate-800">
+                        <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400" style={{ width: model.confidence }} />
+                      </div>
+                      <div className="mt-2 text-xs text-slate-400">{model.notes}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="panel rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-slate-950/40">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">Community reports</div>
+                    <h2 className="mt-2 text-2xl font-bold text-white">Storm spotting network</h2>
+                  </div>
+                  <button className="rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-200">
+                    Contribute
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {stormReports.map((report) => (
+                    <div key={report.user} className={`rounded-2xl border border-slate-800 p-3 ${report.tone}`}>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-semibold">{report.user}</span>
+                        <span className="text-[10px] uppercase tracking-[0.2em] opacity-70">{report.time}</span>
+                      </div>
+                      <div className="mt-2 text-sm leading-relaxed">{report.text}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside className="w-[320px] border-l border-slate-800 bg-slate-950/95">
+          <METARPanel observations={observations} />
+        </aside>
+      </div>
+    </main>
+  );
+}
+
