@@ -37,13 +37,28 @@ button { color: inherit; }
 .map-location-chip { position: absolute; z-index: 4; top: 58px; left: 16px; display: flex; flex-direction: column; gap: 3px; padding: 10px 13px; border: 1px solid #ffffff32; border-radius: 7px; color: #fff; background: #18212ddf; box-shadow: 0 3px 12px #0004; backdrop-filter: blur(8px); pointer-events: none; }
 .map-location-chip strong { font-size: 12px; }
 .map-location-chip span { color: #c1ccd7; font-size: 10px; }
-.radar-panel { position: absolute; z-index: 4; left: 16px; bottom: 72px; width: 248px; padding: 13px; border: 1px solid #ffffff35; border-radius: 8px; color: #edf3fa; background: #17212de8; box-shadow: 0 4px 18px #0005; backdrop-filter: blur(10px); }
+.feature-dock { position: absolute; z-index: 5; top: 16px; right: 16px; width: 208px; max-height: calc(100% - 220px); overflow-y: auto; padding: 8px; border: 1px solid #ffffff32; border-radius: 8px; background: #17212dec; box-shadow: 0 4px 18px #0005; backdrop-filter: blur(10px); }
+.dock-caption { padding: 5px 8px 8px; color: #91a1b1; font-size: 9px; font-weight: 800; letter-spacing: .15em; }
+.dock-item { width: 100%; display: grid; grid-template-columns: 22px 1fr 12px; align-items: center; gap: 6px; padding: 8px; border: 0; border-radius: 5px; text-align: left; color: #dce5ed; background: transparent; font-size: 10px; cursor: pointer; }
+.dock-item:hover, .dock-item.selected { color: #fff; background: #ffffff19; }
+.dock-icon { color: #63c4ff; font-size: 14px; text-align: center; }
+.dock-item b { color: #8b9aaa; font-size: 13px; }
+.feature-detail { position: absolute; z-index: 8; top: 16px; right: 238px; width: min(310px, calc(100% - 270px)); padding: 18px; border: 1px solid #ffffff3b; border-radius: 8px; color: #edf3fa; background: #17212df5; box-shadow: 0 8px 24px #0006; }
+.feature-detail h2 { margin: 8px 0; font-size: 17px; }
+.feature-detail p { color: #b7c3ce; font-size: 12px; line-height: 1.5; }
+.feature-close { position: absolute; top: 7px; right: 10px; border: 0; background: none; color: #cbd5df; font-size: 22px; cursor: pointer; }
+.feature-status { display: flex; align-items: center; gap: 7px; margin-top: 13px; color: #ffcd73; font-size: 10px; font-weight: 700; }
+.feature-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #f5aa36; }
+.feature-detail .feature-requirement { margin-bottom: 0; padding-top: 10px; border-top: 1px solid #ffffff20; font-size: 10px; }
+.radar-panel { position: absolute; z-index: 4; left: 16px; bottom: 72px; width: 264px; padding: 13px; border: 1px solid #ffffff35; border-radius: 8px; color: #edf3fa; background: #17212de8; box-shadow: 0 4px 18px #0005; backdrop-filter: blur(10px); }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
 .panel-heading div { display: flex; flex-direction: column; gap: 4px; }
 .eyebrow { color: #9eacba; font-size: 9px; font-weight: 750; letter-spacing: .12em; }
 .panel-heading strong { font-size: 13px; }
 .product-dot { width: 9px; height: 9px; border-radius: 50%; background: #f7cf35; box-shadow: 0 0 9px #f7cf3580; }
-.product-picker { width: 100%; height: 32px; margin-bottom: 13px; padding: 0 8px; border: 1px solid #ffffff30; border-radius: 5px; outline: none; background: #202c39; color: #f2f5f8; font-size: 11px; }
+.product-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-bottom: 12px; }
+.product-tabs button { min-height: 29px; padding: 4px; border: 1px solid #ffffff24; border-radius: 4px; color: #c5d0da; background: #202c39; font-size: 9px; cursor: pointer; }
+.product-tabs button:hover, .product-tabs button.active { border-color: #42a8ef; color: #fff; background: #1269a7; }
 .legend-title { margin-bottom: 7px; color: #cbd5df; font-size: 10px; }
 .legend-bar { height: 9px; border-radius: 3px; background: linear-gradient(90deg, #4a9ddb 0%, #39d9d4 18%, #35b84b 36%, #e8df39 53%, #f49b26 70%, #e8402a 84%, #cd39ad 100%); }
 .legend-values { display: flex; justify-content: space-between; margin-top: 4px; color: #b6c1cc; font-size: 9px; }
@@ -72,8 +87,11 @@ button { color: inherit; }
   .live-indicator { font-size: 9px; }
   .mode-tabs { order: 3; width: 100%; height: 37px; justify-content: space-around; }
   .mode-tab { padding: 0 8px; font-size: 11px; }
+  .feature-dock { top: 10px; right: 10px; width: 174px; max-height: calc(100% - 270px); }
+  .dock-item { padding: 7px 5px; font-size: 9px; }
+  .feature-detail { top: 10px; right: 192px; width: min(260px, calc(100% - 205px)); padding: 13px; }
   .map-location-chip { top: 58px; left: 10px; padding: 8px 10px; }
-  .radar-panel { left: 10px; bottom: 68px; width: min(220px, calc(100% - 20px)); padding: 10px; }
+  .radar-panel { left: 10px; bottom: 68px; width: min(264px, calc(100% - 20px)); padding: 10px; }
   .timeline-bar { right: 10px; bottom: 10px; left: 10px; height: 42px; }
   .map-alert { top: 106px; }
   .maplibregl-ctrl-top-right { top: 10px; right: 10px; }

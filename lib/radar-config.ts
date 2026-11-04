@@ -10,13 +10,19 @@ export const RADAR_SITES = [
 ] as const;
 
 export const RADAR_PRODUCTS = [
-  { key: 'ref', label: 'Base Reflectivity', description: 'NEXRAD Level III N0Q' },
-  { key: 'vel', label: 'Base Velocity', description: 'NEXRAD Level III N0U' },
-  { key: 'srvel', label: 'Storm Relative Velocity', description: 'NEXRAD Level III N0S' }
+  { key: 'ref', label: 'Reflectivity', description: 'NEXRAD Level III N0Q' },
+  { key: 'vel', label: 'Velocity', description: 'NEXRAD Level III N0U' },
+  { key: 'srvel', label: 'SRV', description: 'NEXRAD Level III N0S' },
+  { key: 'cc', label: 'Correlation Coefficient', description: 'NEXRAD Level III N0C' },
+  { key: 'zdr', label: 'Differential Reflectivity', description: 'NEXRAD Level III N0X' },
+  { key: 'kdp', label: 'Specific Differential Phase', description: 'NEXRAD Level III N0K' }
 ] as const;
 
 export const NEXRAD_PRODUCT_CODES: Record<string, string> = {
   ref: 'N0Q',
   vel: 'N0U',
-  srvel: 'N0S'
+  srvel: 'N0S',
+  cc: 'N0C',
+  zdr: 'N0X',
+  kdp: 'N0K'
 };
