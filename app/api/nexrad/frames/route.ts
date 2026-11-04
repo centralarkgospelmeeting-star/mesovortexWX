@@ -1,31 +1,24 @@
+import { NEXRAD_PRODUCT_CODES, RADAR_SITES } from '../../../../lib/radar-config';
+
 export const dynamic = 'force-dynamic';
 
-const RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
+const IEM_TILE_BASE = 'https://mesonet1.agron.iastate.edu/c/tile.py/1.0.0';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const requestedLimit = Number.parseInt(searchParams.get('limit') ?? '8', 10);
-  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 2), 12) : 8;
+  const siteId = (searchParams.get('site') ?? '').toUpperCase();
+  const productKey = (searchParams.get('product') ?? 'ref').toLowerCase();
+  const site = RADAR_SITES.find((item) => item.radarId === siteId);
+  const productCode = NEXRAD_PRODUCT_CODES[productKey];
 
-  try {
-    const response = await fetch(RAINVIEWER_API, { cache: 'no-store' });
-    if (!response.ok) {
-      return Response.json({ source: 'RainViewer', frames: [], error: 'Radar provider is unavailable' }, { status: 502 });
-    }
-
-    const data = await response.json();
-    const frames = Array.isArray(data?.radar?.past) ? data.radar.past.slice(-limit) : [];
-    const validFrames = frames
-      .filter((frame: { path?: unknown; time?: unknown }) => typeof frame.path === 'string' && Number.isFinite(frame.time))
-      .map((frame: { path: string; time: number }) => ({ path: frame.path, time: frame.time }));
-
-    if (validFrames.length === 0) {
-      return Response.json({ source: 'RainViewer', frames: [], error: 'No recent radar scans are available' }, { status: 503 });
-    }
-
-    return Response.json({ source: 'RainViewer global radar composite', frames: validFrames });
-  } catch (error) {
-    console.error('RainViewer radar request failed:', error);
-    return Response.json({ source: 'RainViewer', frames: [], error: 'Could not retrieve live radar scans' }, { status: 502 });
+  if (!site || !productCode) {
+    return Response.json({ error: 'Unsupported NEXRAD site or product.' }, { status: 400 });
   }
+
+  return Response.json({
+    source: 'Iowa Environmental Mesonet NEXRAD Level III tiles',
+    station: site.radarId,
+    product: productCode,
+    tileUrl: `${IEM_TILE_BASE}/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`
+  }, { headers: { 'Cache-Control': 'no-store' } });
 }
