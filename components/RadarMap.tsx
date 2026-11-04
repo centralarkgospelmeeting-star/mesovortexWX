@@ -23,16 +23,48 @@ function makeStyle(mapType: MapType): StyleSpecification {
     version: 8,
     sources: {
       basemap: satellite
-        ? { type: 'raster', tiles: ['https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg'], tileSize: 256, attribution: 'Sentinel-2 cloudless © EOX' }
-        : { type: 'raster', tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19, attribution: '© OpenStreetMap contributors' },
-      [TERRAIN_SOURCE_ID]: { type: 'raster-dem', url: 'https://tiles.mapterhorn.com/tilejson.json', tileSize: 256, attribution: 'Terrain data © MapTiler/Mapterhorn' },
-      'hillshade-source': { type: 'raster-dem', url: 'https://tiles.mapterhorn.com/tilejson.json', tileSize: 256 }
+        ? {
+            type: 'raster',
+            tiles: ['https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg'],
+            tileSize: 256,
+            attribution: 'Sentinel-2 cloudless © EOX'
+          }
+        : {
+            type: 'raster',
+            tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            maxzoom: 19,
+            attribution: '© OpenStreetMap contributors'
+          },
+      [TERRAIN_SOURCE_ID]: {
+        type: 'raster-dem',
+        url: 'https://tiles.mapterhorn.com/tilejson.json',
+        tileSize: 256,
+        attribution: 'Terrain data © MapTiler/Mapterhorn'
+      },
+      'hillshade-source': {
+        type: 'raster-dem',
+        url: 'https://tiles.mapterhorn.com/tilejson.json',
+        tileSize: 256
+      }
     },
     layers: [
       { id: 'basemap-layer', type: 'raster', source: 'basemap' },
-      ...(mapType === 'terrain' ? [{ id: 'terrain-hillshade', type: 'hillshade' as const, source: 'hillshade-source', paint: { 'hillshade-shadow-color': '#473b24', 'hillshade-exaggeration': 0.35 } }] : [])
+      ...(mapType === 'terrain'
+        ? [{
+            id: 'terrain-hillshade',
+            type: 'hillshade' as const,
+            source: 'hillshade-source',
+            paint: { 'hillshade-shadow-color': '#473b24', 'hillshade-exaggeration': 0.35 }
+          }]
+        : [])
     ],
-    ...(mapType === 'globe' ? { projection: { type: 'globe' as const }, sky: { 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0] } } : {}),
+    ...(mapType === 'globe'
+      ? {
+          projection: { type: 'globe' as const },
+          sky: { 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0] }
+        }
+      : {}),
     ...(mapType === 'terrain' ? { terrain: { source: TERRAIN_SOURCE_ID, exaggeration: 1 } } : {})
   };
 }
@@ -72,7 +104,12 @@ export function RadarMap({ product, radarSite = 'KTLX', mapType }: RadarMapProps
         scheme: 'tms',
         attribution: 'NEXRAD Level III radar imagery © Iowa Environmental Mesonet / NOAA'
       });
-      map.addLayer({ id: RADAR_LAYER_ID, type: 'raster', source: RADAR_SOURCE_ID, paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 100 } });
+      map.addLayer({
+        id: RADAR_LAYER_ID,
+        type: 'raster',
+        source: RADAR_SOURCE_ID,
+        paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 100 }
+      });
     };
 
     const installSiteMarkers = () => {
@@ -127,9 +164,10 @@ export function RadarMap({ product, radarSite = 'KTLX', mapType }: RadarMapProps
 
     const onSiteClick = (event: maplibregl.MapLayerMouseEvent) => {
       const feature = event.features?.[0];
-      if (!feature || !Array.isArray(feature.geometry.coordinates)) return;
+      if (!feature || feature.geometry.type !== 'Point') return;
       const coordinates = feature.geometry.coordinates as [number, number];
-      const properties = feature.properties as { radarId: string; name: string };
+      const properties = feature.properties as { radarId: string; name: string } | null;
+      if (!properties) return;
       new maplibregl.Popup({ closeButton: true, offset: 12 })
         .setLngLat(coordinates)
         .setHTML(`<strong>NEXRAD ${properties.radarId}</strong><br/>${properties.name}`)
