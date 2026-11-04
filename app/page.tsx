@@ -69,20 +69,18 @@ export default function Page() {
 
       <section className="map-canvas" aria-label="Interactive weather radar map">
         <RadarMap product={product} isLooping={isLooping} radarSite={radarSite} mapType={mapType} />
-        <div className="map-location-chip"><strong>{selectedSite?.name ?? 'Radar site'}</strong><span>{radarSite} · NEXRAD</span></div>
+        <div className="map-location-chip"><strong>{selectedSite?.name ?? 'Map location'}</strong><span>Map centered on {radarSite} · Live global composite, not site-specific scans</span></div>
         <div className="radar-panel">
-          <div className="panel-heading"><div><span className="eyebrow">RADAR PRODUCT</span><strong>{selectedProduct?.label ?? 'Reflectivity'}</strong></div><span className="product-dot" /></div>
-          <select className="product-picker" value={product} onChange={(event) => setProduct(event.target.value as RadarProduct)} aria-label="Radar product">
-            {RADAR_PRODUCTS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-          </select>
-          <div className="legend-title">Reflectivity · dBZ</div><div className="legend-bar" />
-          <div className="legend-values"><span>-10</span><span>15</span><span>25</span><span>35</span><span>45</span><span>60+</span></div>
-          <div className="panel-footnote">{selectedSite?.name ?? radarSite} radar · Live RainViewer imagery</div>
+          <div className="panel-heading"><div><span className="eyebrow">LIVE RADAR</span><strong>Global reflectivity composite</strong></div><span className="product-dot" /></div>
+          <div className="legend-title">Rain intensity · composite reflectivity</div><div className="legend-bar" />
+          <div className="legend-values"><span>Light</span><span>Moderate</span><span>Heavy</span><span>Intense</span></div>
+          <div className="panel-footnote">Source: RainViewer · updates every 5 minutes</div>
+          <label className="loop-control"><input type="checkbox" checked={isLooping} onChange={(event) => setIsLooping(event.target.checked)} /> Animate recent observed scans</label>
         </div>
         <div className="timeline-bar">
           <button className={`play-button ${isLooping ? 'playing' : ''}`} type="button" onClick={() => setIsLooping((value) => !value)} aria-label={isLooping ? 'Stop radar loop' : 'Play radar loop'}>{isLooping ? 'Ⅱ' : '▶'}</button>
-          <div className="timeline-content"><div className="timeline-labels"><span>{isLooping ? 'RADAR LOOP PLAYING' : 'RADAR LOOP'}</span><span>Latest scan</span></div><div className={`timeline-track ${isLooping ? 'is-playing' : ''}`}><i /><i /><i /><i /><i /><i /><i /><b /></div></div>
-          <span className="timeline-time">NOW</span>
+          <div className="timeline-content"><div className="timeline-labels"><span>{isLooping ? 'PLAYING OBSERVED RADAR SCANS' : 'RECENT OBSERVED RADAR SCANS'}</span><span>UTC</span></div><div className={`timeline-track ${isLooping ? 'is-playing' : ''}`}><i /><i /><i /><i /><i /><i /><i /><b /></div></div>
+          <span className="timeline-time">{isLooping ? 'LOOP' : 'LIVE'}</span>
         </div>
       </section>
     </main>

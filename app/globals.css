@@ -46,11 +46,12 @@ button { color: inherit; }
 .eyebrow { color: #9eacba; font-size: 9px; font-weight: 750; letter-spacing: .12em; }
 .panel-heading strong { font-size: 13px; }
 .product-dot { width: 9px; height: 9px; border-radius: 50%; background: #f7cf35; box-shadow: 0 0 9px #f7cf3580; }
-.product-picker { width: 100%; height: 32px; margin-bottom: 13px; padding: 0 8px; border: 1px solid #ffffff30; border-radius: 5px; outline: none; background: #202c39; color: #f2f5f8; font-size: 11px; }
 .legend-title { margin-bottom: 7px; color: #cbd5df; font-size: 10px; }
 .legend-bar { height: 9px; border-radius: 3px; background: linear-gradient(90deg, #4a9ddb 0%, #39d9d4 18%, #35b84b 36%, #e8df39 53%, #f49b26 70%, #e8402a 84%, #cd39ad 100%); }
 .legend-values { display: flex; justify-content: space-between; margin-top: 4px; color: #b6c1cc; font-size: 9px; }
 .panel-footnote { margin-top: 12px; padding-top: 9px; border-top: 1px solid #ffffff20; color: #aab7c4; font-size: 9px; }
+.loop-control { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: #c5d0da; font-size: 10px; cursor: pointer; }
+.loop-control input { accent-color: #1687e8; }
 .timeline-bar { position: absolute; z-index: 4; right: 16px; bottom: 16px; left: 16px; height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 13px; border: 1px solid #ffffff35; border-radius: 7px; background: #17212dec; box-shadow: 0 4px 16px #0005; backdrop-filter: blur(8px); }
 .play-button { width: 28px; height: 28px; flex: 0 0 28px; border: 0; border-radius: 50%; background: #147fd2; color: #fff; font-size: 11px; cursor: pointer; }
 .play-button.playing { background: #ca4a43; }
