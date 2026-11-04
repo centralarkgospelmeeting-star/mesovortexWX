@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     source: 'Iowa Environmental Mesonet NEXRAD Level III tiles',
     station: site.radarId,
     product: productCode,
+    scheme: 'tms',
     tileUrl: `${IEM_TILE_BASE}/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`
   }, { headers: { 'Cache-Control': 'no-store' } });
 }

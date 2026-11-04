@@ -8,10 +8,13 @@ import { RADAR_SITES } from '../lib/radar-config';
 
 type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
 type RadarMapProps = { product: string; radarSite?: string; mapType: MapType };
-type RadarTileConfig = { tileUrl: string; station: string; product: string; source: string };
+type RadarTileConfig = { tileUrl: string; station: string; product: string; source: string; scheme: 'tms' | 'xyz' };
 
 const RADAR_SOURCE_ID = 'mesovortex-nexrad';
 const RADAR_LAYER_ID = 'mesovortex-nexrad-layer';
+const SITES_SOURCE_ID = 'nexrad-sites';
+const SITES_LAYER_ID = 'nexrad-sites-circles';
+const SITES_LABEL_LAYER_ID = 'nexrad-sites-labels';
 const TERRAIN_SOURCE_ID = 'terrainSource';
 
 function makeStyle(mapType: MapType): StyleSpecification {
@@ -34,7 +37,7 @@ function makeStyle(mapType: MapType): StyleSpecification {
   };
 }
 
-export function RadarMap({ product, radarSite = 'KOUN', mapType }: RadarMapProps) {
+export function RadarMap({ product, radarSite = 'KTLX', mapType }: RadarMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const tileUrlRef = useRef<string | null>(null);
@@ -66,10 +69,75 @@ export function RadarMap({ product, radarSite = 'KOUN', mapType }: RadarMapProps
         type: 'raster',
         tiles: [tileUrlRef.current],
         tileSize: 256,
-        attribution: 'NEXRAD radar imagery © Iowa Environmental Mesonet / NOAA'
+        scheme: 'tms',
+        attribution: 'NEXRAD Level III radar imagery © Iowa Environmental Mesonet / NOAA'
       });
-      map.addLayer({ id: RADAR_LAYER_ID, type: 'raster', source: RADAR_SOURCE_ID, paint: { 'raster-opacity': 0.82, 'raster-fade-duration': 150 } });
+      map.addLayer({ id: RADAR_LAYER_ID, type: 'raster', source: RADAR_SOURCE_ID, paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 100 } });
     };
+
+    const installSiteMarkers = () => {
+      if (!map.isStyleLoaded()) return;
+      if (!map.getSource(SITES_SOURCE_ID)) {
+        map.addSource(SITES_SOURCE_ID, {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: RADAR_SITES.map((radar) => ({
+              type: 'Feature' as const,
+              properties: { id: radar.id, radarId: radar.radarId, name: radar.name },
+              geometry: { type: 'Point' as const, coordinates: [radar.lon, radar.lat] }
+            }))
+          }
+        });
+      }
+      if (!map.getLayer(SITES_LAYER_ID)) {
+        map.addLayer({
+          id: SITES_LAYER_ID,
+          type: 'circle',
+          source: SITES_SOURCE_ID,
+          paint: {
+            'circle-radius': ['case', ['==', ['get', 'id'], radarSite], 9, 6],
+            'circle-color': ['case', ['==', ['get', 'id'], radarSite], '#ffcf33', '#18a8ff'],
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 2,
+            'circle-opacity': 0.95
+          }
+        });
+      }
+      if (!map.getLayer(SITES_LABEL_LAYER_ID)) {
+        map.addLayer({
+          id: SITES_LABEL_LAYER_ID,
+          type: 'symbol',
+          source: SITES_SOURCE_ID,
+          minzoom: 5,
+          layout: {
+            'text-field': ['get', 'radarId'],
+            'text-size': 11,
+            'text-offset': [0, 1.25],
+            'text-allow-overlap': true
+          },
+          paint: {
+            'text-color': '#ffffff',
+            'text-halo-color': '#14202c',
+            'text-halo-width': 1.5
+          }
+        });
+      }
+    };
+
+    const onSiteClick = (event: maplibregl.MapLayerMouseEvent) => {
+      const feature = event.features?.[0];
+      if (!feature || !Array.isArray(feature.geometry.coordinates)) return;
+      const coordinates = feature.geometry.coordinates as [number, number];
+      const properties = feature.properties as { radarId: string; name: string };
+      new maplibregl.Popup({ closeButton: true, offset: 12 })
+        .setLngLat(coordinates)
+        .setHTML(`<strong>NEXRAD ${properties.radarId}</strong><br/>${properties.name}`)
+        .addTo(map);
+    };
+    map.on('click', SITES_LAYER_ID, onSiteClick);
+    map.on('mouseenter', SITES_LAYER_ID, () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', SITES_LAYER_ID, () => { map.getCanvas().style.cursor = ''; });
 
     const loadRadarTiles = async () => {
       try {
@@ -79,7 +147,8 @@ export function RadarMap({ product, radarSite = 'KOUN', mapType }: RadarMapProps
         if (!response.ok || !data.tileUrl) throw new Error(data.error || 'NEXRAD tile service unavailable');
         tileUrlRef.current = data.tileUrl;
         installRadarLayer();
-        setRadarStatus(`NEXRAD · ${data.station} · ${productLabel} · latest available scan`);
+        installSiteMarkers();
+        setRadarStatus(`NEXRAD ${data.station} · ${productLabel} · latest available Level III scan`);
       } catch (error) {
         console.error('NEXRAD tile setup failed:', error);
         setRadarStatus(`NEXRAD ${site.radarId} radar unavailable`);
@@ -88,15 +157,17 @@ export function RadarMap({ product, radarSite = 'KOUN', mapType }: RadarMapProps
 
     map.on('load', () => {
       if (mapType === 'terrain') map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 1 });
+      installSiteMarkers();
       void loadRadarTiles();
     });
     map.on('style.load', () => {
       if (mapType === 'terrain') map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 1 });
       installRadarLayer();
+      installSiteMarkers();
     });
 
     const handleZoom = (event: Event) => map.zoomTo(map.getZoom() + (event as CustomEvent<number>).detail, { duration: 250 });
-    const handleReset = () => map.flyTo({ center: [site.lon, site.lat], zoom: 6, pitch: mapType === 'terrain' ? 45 : 0 });
+    const handleReset = () => map.flyTo({ center: [site.lon, site.lat], zoom: 7, pitch: mapType === 'terrain' ? 45 : 0 });
     const handleRefresh = () => void loadRadarTiles();
     window.addEventListener('mesovortex:zoom', handleZoom);
     window.addEventListener('mesovortex:reset', handleReset);
@@ -115,7 +186,7 @@ export function RadarMap({ product, radarSite = 'KOUN', mapType }: RadarMapProps
   return (
     <div className="radar-map-root">
       <div ref={containerRef} className="radar-map-container" aria-label={`${mapType} map with NEXRAD ${productLabel} from ${site.radarId}`} />
-      <div className="radar-map-status"><i className="status-live" />{radarStatus}</div>
+      <div className="radar-map-status"><i className={radarStatus.includes('latest available') ? 'status-live' : ''} />{radarStatus}</div>
     </div>
   );
 }

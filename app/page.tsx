@@ -21,7 +21,7 @@ const mapTypes: { id: MapType; label: string }[] = [
 
 export default function Page() {
   const [product, setProduct] = useState<RadarProduct>('ref');
-  const [radarSite, setRadarSite] = useState('KOUN');
+  const [radarSite, setRadarSite] = useState('KTLX');
   const [mapType, setMapType] = useState<MapType>('street');
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const selectedProduct = RADAR_PRODUCTS.find((item) => item.key === product);
@@ -42,7 +42,7 @@ export default function Page() {
           {mapTypes.map((type) => <button key={type.id} type="button" className={`mode-tab ${mapType === type.id ? 'active' : ''}`} onClick={() => setMapType(type.id)} aria-pressed={mapType === type.id}>{type.label}</button>)}
         </nav>
         <div className="toolbar-actions">
-          <label className="site-picker" aria-label="Select NEXRAD radar site"><span className="site-dot" /><select value={radarSite} onChange={(event) => setRadarSite(event.target.value)}>{RADAR_SITES.map((site) => <option key={site.id} value={site.id}>{site.id} · {site.name}</option>)}</select></label>
+          <label className="site-picker" aria-label="Select NEXRAD radar site"><span className="site-dot" /><select value={radarSite} onChange={(event) => setRadarSite(event.target.value)}>{RADAR_SITES.map((site) => <option key={site.id} value={site.id}>{site.radarId} · {site.name}</option>)}</select></label>
           <span className="live-indicator"><i /> NEXRAD</span>
         </div>
       </header>
@@ -55,9 +55,9 @@ export default function Page() {
           <select className="product-picker" value={product} onChange={(event) => setProduct(event.target.value as RadarProduct)} aria-label="NEXRAD radar product">
             {RADAR_PRODUCTS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
           </select>
-          <div className="legend-title">NEXRAD Level III precipitation intensity</div><div className="legend-bar" />
+          <div className="legend-title">NEXRAD Level III reflectivity / velocity</div><div className="legend-bar" />
           <div className="legend-values"><span>Light</span><span>Moderate</span><span>Heavy</span><span>Intense</span></div>
-          <div className="panel-footnote">Station-specific radar tiles · Iowa Environmental Mesonet · NOAA NEXRAD</div>
+          <div className="panel-footnote">Actual station radar tiles · Iowa Environmental Mesonet / NOAA NEXRAD. Tower markers show stations in this selector.</div>
           <button className="radar-refresh" type="button" onClick={() => window.dispatchEvent(new Event('mesovortex:refresh-radar'))}>Refresh latest scan</button>
         </div>
         <div className="timeline-bar"><span className="live-scan-dot" /><div className="timeline-content"><div className="timeline-labels"><span>STATION-SPECIFIC NEXRAD</span><span>Latest available scan</span></div><div className="timeline-track"><i /><i /><i /><i /><i /><i /><i /><b /></div></div><span className="timeline-time">LIVE</span></div>
