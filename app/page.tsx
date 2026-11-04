@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import { AlertBanner } from '../components/AlertBanner';
+import { WeatherAssistant } from '../components/WeatherAssistant';
 import { RADAR_PRODUCTS, RADAR_SITES } from '../lib/radar-config';
 
 const RadarMap = dynamic(
@@ -21,7 +22,7 @@ const mapTypes: { id: MapType; label: string }[] = [
 ];
 
 const features: { id: FeatureKey; label: string; icon: string; description: string; requirement: string }[] = [
-  { id: 'chat', label: 'AI Weather Chat', icon: '✦', description: 'Ask questions about current radar, alerts, and forecast data.', requirement: 'Needs an AI provider and server-side API key; not connected yet.' },
+  { id: 'chat', label: 'AI Weather Assistant', icon: '✦', description: 'Ask questions about weather and the current radar view.', requirement: 'Requires OPENAI_API_KEY configured in deployment environment variables.' },
   { id: 'lightning', label: 'Lightning Layer', icon: 'ϟ', description: 'Overlay live lightning strike observations.', requirement: 'Needs a licensed or public lightning data feed; no strikes are fabricated.' },
   { id: 'outlooks', label: 'SPC Outlook Layer', icon: '◉', description: 'Display Storm Prediction Center convective outlooks.', requirement: 'SPC outlook GeoJSON/feed integration is not connected yet.' },
   { id: 'reports', label: 'Storm Reports', icon: '⚑', description: 'Show official preliminary storm reports on the map.', requirement: 'SPC storm-report feed integration is not connected yet.' },
@@ -41,6 +42,7 @@ export default function Page() {
   const selectedProduct = RADAR_PRODUCTS.find((item) => item.key === product);
   const selectedSite = RADAR_SITES.find((site) => site.id === radarSite);
   const featurePanel = features.find((feature) => feature.id === activeFeature);
+  const isAssistantOpen = activeFeature === 'chat';
 
   useEffect(() => {
     const loadAlerts = () => fetch('/api/alerts').then((res) => res.json()).then((data) => setAlerts(data.alerts || [])).catch(() => setAlerts([]));
@@ -73,7 +75,17 @@ export default function Page() {
           </button>)}
         </aside>
 
-        {featurePanel && <div className="feature-detail" role="dialog" aria-modal="false" aria-labelledby="feature-title">
+        {isAssistantOpen && <WeatherAssistant
+          key="weather-assistant"
+          context={{
+            site: `${selectedSite?.radarId ?? radarSite} · ${selectedSite?.name ?? 'Selected site'}`,
+            product: selectedProduct?.label ?? product,
+            alerts: alerts.slice(0, 5).map((alert) => `${alert.severity}: ${alert.headline} (${alert.area})`)
+          }}
+          onClose={() => setActiveFeature(null)}
+        />}
+
+        {featurePanel && activeFeature !== 'chat' && <div className="feature-detail" role="dialog" aria-modal="false" aria-labelledby="feature-title">
           <button type="button" className="feature-close" onClick={() => setActiveFeature(null)} aria-label="Close tool details">×</button>
           <span className="eyebrow">WEATHER TOOL</span><h2 id="feature-title">{featurePanel.label}</h2>
           <p>{featurePanel.description}</p><div className="feature-status"><span className="feature-status-dot" />Integration needed</div>
