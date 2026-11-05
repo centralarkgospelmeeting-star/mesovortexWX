@@ -48,12 +48,12 @@ export function Sidebar({ product, setProduct, radarSite = 'KLZK', setRadarSite 
         />
       </div>
 
-      <div className="px-4 pb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
+           <div className="px-4 pb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
         NEXRAD Products
       </div>
       <div className="grid grid-cols-2 gap-2 p-4">
         {RADAR_PRODUCTS.map((item) => {
-          const active = product === item.key;
+          const active = product === (item.key as RadarProduct);
           return (
             <button
               key={item.key}
@@ -65,7 +65,7 @@ export function Sidebar({ product, setProduct, radarSite = 'KLZK', setRadarSite 
                   : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
               }`}
             >
-              <div className="font-semibold">{item.short || item.label}</div>
+              <div className="font-semibold">{item.short}</div>
               <div className="mt-0.5 text-[10px] opacity-70">{item.label}</div>
             </button>
           );
