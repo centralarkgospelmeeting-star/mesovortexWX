@@ -48,7 +48,7 @@ export function Sidebar({ product, setProduct, radarSite = 'KLZK', setRadarSite 
         />
       </div>
 
-           <div className="px-4 pb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
+      <div className="px-4 pb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
         NEXRAD Products
       </div>
       <div className="grid grid-cols-2 gap-2 p-4">
