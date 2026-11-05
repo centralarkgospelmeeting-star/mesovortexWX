@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { RadarMap } from '../components/RadarMap';
 import { Sidebar } from '../components/Sidebar';
 import { WeatherAssistant } from '../components/WeatherAssistant';
@@ -12,19 +12,35 @@ type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
 type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
 type LayoutMode = 'single' | 'dual';
 
+type Frame = {
+  time: string;
+  label: string;
+  tileUrl: string;
+  ageMinutes: number;
+};
+
 export default function MesoVortexWX() {
   const [product, setProduct] = useState<RadarProduct>('ref');
   const [product2, setProduct2] = useState<RadarProduct>('vel');
-  const [radarSite, setRadarSite] = useState('KLZK'); // default Little Rock
+  const [radarSite, setRadarSite] = useState('KLZK');
   const [mapType, setMapType] = useState<MapType>('street');
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('single');
   const [showAssistant, setShowAssistant] = useState(false);
   const [showMetar, setShowMetar] = useState(false);
   const [alerts, setAlerts] = useState<any[]>([]);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [frameIndex, setFrameIndex] = useState(5);
 
-  // Load alerts
+  // Loop state
+  const [frames, setFrames] = useState<Frame[]>([]);
+  const [frameIndex, setFrameIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [loopLoading, setLoopLoading] = useState(false);
+  const playTimerRef = useRef<number | null>(null);
+
+  const currentSite = RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
+  const productInfo = RADAR_PRODUCTS.find((p) => p.key === product);
+  const currentFrame = frames[frameIndex] || null;
+
+  // ---------- Load alerts ----------
   useEffect(() => {
     async function load() {
       try {
@@ -40,17 +56,77 @@ export default function MesoVortexWX() {
     return () => clearInterval(id);
   }, []);
 
-  // Playback
-  useEffect(() => {
-    if (!isPlaying) return;
-    const id = setInterval(() => {
-      setFrameIndex((i) => (i + 1) % 6);
-    }, 1200);
-    return () => clearInterval(id);
-  }, [isPlaying]);
+  // ---------- Load frames when site or product changes ----------
+  const loadFrames = useCallback(async () => {
+    setLoopLoading(true);
+    try {
+      const res = await fetch(
+        `/api/nexrad/frames?site=${encodeURIComponent(currentSite.radarId)}&product=${encodeURIComponent(product)}&hours=1.5`,
+        { cache: 'no-store' }
+      );
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.frames) && data.frames.length > 0) {
+        setFrames(data.frames);
+        // Start on the newest (LIVE) frame
+        setFrameIndex(data.frames.length - 1);
+      } else {
+        setFrames([]);
+        setFrameIndex(0);
+      }
+    } catch (err) {
+      console.error('Failed to load frames', err);
+      setFrames([]);
+    } finally {
+      setLoopLoading(false);
+    }
+  }, [currentSite.radarId, product]);
 
-  const currentSite = RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
-  const productInfo = RADAR_PRODUCTS.find((p) => p.key === product);
+  useEffect(() => {
+    void loadFrames();
+  }, [loadFrames]);
+
+  // ---------- Playback timer ----------
+  useEffect(() => {
+    if (playTimerRef.current) {
+      window.clearInterval(playTimerRef.current);
+      playTimerRef.current = null;
+    }
+
+    if (!isPlaying || frames.length < 2) return;
+
+    playTimerRef.current = window.setInterval(() => {
+      setFrameIndex((prev) => {
+        const next = prev + 1;
+        return next >= frames.length ? 0 : next; // loop back to start
+      });
+    }, 700); // ~0.7s per frame – feels good for radar
+
+    return () => {
+      if (playTimerRef.current) {
+        window.clearInterval(playTimerRef.current);
+        playTimerRef.current = null;
+      }
+    };
+  }, [isPlaying, frames.length]);
+
+  // ---------- Helpers ----------
+  const goToLive = () => {
+    if (frames.length > 0) {
+      setFrameIndex(frames.length - 1);
+      setIsPlaying(false);
+    }
+  };
+
+  const togglePlay = () => {
+    if (frames.length < 2) return;
+    setIsPlaying((p) => !p);
+  };
+
+  const onScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const idx = Number(e.target.value);
+    setFrameIndex(idx);
+    setIsPlaying(false);
+  };
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-[#0b1220] text-slate-100">
@@ -64,7 +140,9 @@ export default function MesoVortexWX() {
             <div className="text-sm font-bold tracking-tight">
               MesoVortex<span className="text-cyan-400">WX</span>
             </div>
-            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Pro Radar · AI · Models</div>
+            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+              Pro Radar · AI · Models
+            </div>
           </div>
         </div>
 
@@ -89,7 +167,7 @@ export default function MesoVortexWX() {
           <select
             value={radarSite}
             onChange={(e) => setRadarSite(e.target.value)}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-cyan-500 focus:outline-none"
+            className="max-w-[220px] rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-cyan-500 focus:outline-none"
           >
             {RADAR_SITES.map((s) => (
               <option key={s.id} value={s.id}>
@@ -148,64 +226,58 @@ export default function MesoVortexWX() {
         />
 
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <div className={`grid min-h-0 flex-1 ${layoutMode === 'dual' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          {/* Maps */}
+          <div
+            className={`grid min-h-0 flex-1 ${
+              layoutMode === 'dual' ? 'grid-cols-2' : 'grid-cols-1'
+            }`}
+          >
             <div className="relative min-h-0">
-              <RadarMap product={product} radarSite={radarSite} mapType={mapType} />
+              <RadarMap
+                product={product}
+                radarSite={radarSite}
+                mapType={mapType}
+                frameUrl={currentFrame?.tileUrl ?? null}
+                frameLabel={currentFrame?.label}
+              />
             </div>
+
             {layoutMode === 'dual' && (
               <div className="relative min-h-0 border-l border-slate-800">
-                <RadarMap product={product2} radarSite={radarSite} mapType={mapType} />
+                <RadarMap
+                  product={product2}
+                  radarSite={radarSite}
+                  mapType={mapType}
+                  // Dual pane currently shows latest of second product (can be enhanced later)
+                />
               </div>
             )}
           </div>
 
-          {/* Timeline */}
-          <div className="flex h-12 shrink-0 items-center gap-4 border-t border-slate-800 bg-[#0f172a]/95 px-4 backdrop-blur">
+          {/* TIMELINE / LOOP CONTROLS */}
+          <div className="flex h-14 shrink-0 items-center gap-4 border-t border-slate-800 bg-[#0f172a]/95 px-4 backdrop-blur">
+            {/* Play / Pause */}
             <button
-              onClick={() => setIsPlaying(!isPlaying)}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-600 text-sm text-white hover:bg-cyan-500"
+              onClick={togglePlay}
+              disabled={frames.length < 2}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-600 text-sm text-white transition hover:bg-cyan-500 disabled:opacity-40"
+              title={isPlaying ? 'Pause' : 'Play loop'}
             >
               {isPlaying ? '❚❚' : '▶'}
             </button>
+
+            {/* Live button */}
+            <button
+              onClick={goToLive}
+              className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-emerald-400 hover:border-emerald-600"
+            >
+              LIVE
+            </button>
+
+            {/* Scrubber */}
             <div className="flex flex-1 items-center gap-3">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800">
-                <div
-                  className="h-full rounded-full bg-cyan-500 transition-all duration-300"
-                  style={{ width: `${((frameIndex + 1) / 6) * 100}%` }}
-                />
-              </div>
-              <span className="w-12 text-right font-mono text-[11px] text-slate-400">
-                {['-50m', '-40m', '-30m', '-20m', '-10m', 'LIVE'][frameIndex]}
-              </span>
-            </div>
-            <div className="text-[11px] text-slate-500">
-              {currentSite.name} · {productInfo?.label}
-            </div>
-          </div>
-        </div>
-
-        {showMetar && (
-          <div className="w-80 shrink-0 border-l border-slate-800 bg-slate-950 overflow-y-auto">
-            <METARPanel observations={[]} />
-          </div>
-        )}
-      </div>
-
-      {/* AI ASSISTANT */}
-      {showAssistant && (
-        <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
-          <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
-            <WeatherAssistant
-              context={{
-                site: radarSite,
-                product: productInfo?.label,
-                alerts: alerts.map((a) => a.headline),
-              }}
-              onClose={() => setShowAssistant(false)}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+              <input
+                type="range"
+                min={0}
+                max={Math.max(frames.length - 1, 0)}
+                value={frameIndex}
