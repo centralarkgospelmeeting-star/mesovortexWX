@@ -362,6 +362,3 @@ export function RadarMap({
     </div>
   );
 }
-    </div>
-  );
-}
