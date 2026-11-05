@@ -1,109 +1,208 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { RadarMap } from '../components/RadarMap';
+import { Sidebar } from '../components/Sidebar';
+import { WeatherAssistant } from '../components/WeatherAssistant';
+import { AlertBanner } from '../components/AlertBanner';
+import { METARPanel } from '../components/METARPanel';
+import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 
-interface Station {
-  id: string;
-  name: string;
-  lat: number;
-  lon: number;
-  state: string;
-}
+type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
+type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
+type LayoutMode = 'single' | 'dual';
 
-const STATIONS: Station[] = [
-  { id: 'KLZK', name: 'Little Rock', lat: 34.836, lon: -92.262, state: 'AR' },
-  { id: 'TLX',  name: 'Oklahoma City', lat: 35.333, lon: -97.278, state: 'OK' },
-  { id: 'FWS',  name: 'Dallas / Fort Worth', lat: 32.573, lon: -97.303, state: 'TX' },
-  { id: 'AMA',  name: 'Amarillo', lat: 35.233, lon: -101.709, state: 'TX' },
-  { id: 'ICT',  name: 'Wichita', lat: 37.654, lon: -97.443, state: 'KS' },
-  { id: 'LBB',  name: 'Lubbock', lat: 33.654, lon: -101.814, state: 'TX' },
-  { id: 'SJT',  name: 'San Angelo', lat: 31.371, lon: -100.492, state: 'TX' },
-  { id: 'MAF',  name: 'Midland / Odessa', lat: 31.943, lon: -102.189, state: 'TX' },
-  { id: 'MLB',  name: 'Melbourne', lat: 28.113, lon: -80.654, state: 'FL' },
-  { id: 'KIND', name: 'Indianapolis', lat: 39.707, lon: -86.280, state: 'IN' },
-  { id: 'KPAH', name: 'Paducah', lat: 37.068, lon: -88.772, state: 'KY' },
-];
-
-const PRODUCTS = [
-  { id: 'ref', label: 'REF', full: 'Super-Res Reflectivity', unit: 'dBZ', min: -10, max: 75 },
-  { id: 'vel', label: 'VEL', full: 'Super-Res Base Velocity', unit: 'kts', min: -80, max: 80 },
-  { id: 'srv', label: 'SRV', full: 'Storm Relative Motion', unit: 'kts', min: -60, max: 60 },
-  { id: 'cc',  label: 'CC',  full: 'Correlation Coefficient', unit: 'CC', min: 0.2, max: 1.05 },
-  { id: 'zdr', label: 'ZDR', full: 'Differential Reflectivity', unit: 'dB', min: -4, max: 8 },
-  { id: 'kdp', label: 'KDP', full: 'Specific Diff Phase', unit: 'deg/km', min: -1, max: 6 },
-  { id: 'mesh', label: 'MESH', full: 'Max Hail Swath', unit: 'in', min: 0.5, max: 4.0 },
-];
-
-const TILTS = ['0.5°', '0.9°', '1.3°', '1.8°', '2.4°', '3.1°', '4.0°', '5.1°'];
-
-export default function WeatherWiseProLayout() {
-  const [station, setStation] = useState<Station>(STATIONS[0]);
-  const [product, setProduct] = useState(PRODUCTS[0]);
-  const [productPane2, setProductPane2] = useState(PRODUCTS[1]);
-  const [tilt, setTilt] = useState('0.5°');
-  const [layoutMode, setLayoutMode] = useState<'single' | 'dual'>('single');
-  const [activeModal, setActiveModal] = useState<string | null>(null);
+export default function MesoVortexWX() {
+  const [product, setProduct] = useState<RadarProduct>('ref');
+  const [product2, setProduct2] = useState<RadarProduct>('vel');
+  const [radarSite, setRadarSite] = useState('KTLX');
+  const [mapType, setMapType] = useState<MapType>('street');
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('single');
+  const [showAssistant, setShowAssistant] = useState(false);
+  const [showMetar, setShowMetar] = useState(false);
+  const [alerts, setAlerts] = useState<any[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [timelineIndex, setTimelineIndex] = useState(5);
-  const [activeWarningsCount, setActiveWarningsCount] = useState(0);
-  const [warningsList, setWarningsList] = useState<any[]>([]);
-  const [lightningCount, setLightningCount] = useState(138);
-  const [chatInput, setChatInput] = useState('');
-  const [chatMessages, setChatMessages] = useState([
-    { sender: 'ai', text: 'WeatherWise Pro Convective Copilot online. Monitoring KTLX and KLZK Level II sweeps.' }
-  ]);
+  const [frameIndex, setFrameIndex] = useState(0);
 
-  const timelineFrames = ['19:40Z', '19:48Z', '19:56Z', '20:04Z', '20:12Z', 'LIVE (20:20Z)'];
-
-  // Fetch active alerts
+  // Load active alerts
   useEffect(() => {
     async function loadAlerts() {
       try {
-        let res = await fetch('/api/alerts');
-        if (!res.ok) res = await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert');
+        const res = await fetch('/api/alerts');
         if (res.ok) {
           const data = await res.json();
-          if (data.features) {
-            setActiveWarningsCount(data.features.length);
-            setWarningsList(data.features.slice(0, 10));
-          }
+          setAlerts(data.features?.slice(0, 12) || []);
         }
-      } catch (e) {}
+      } catch {}
     }
     loadAlerts();
+    const id = setInterval(loadAlerts, 60_000);
+    return () => clearInterval(id);
   }, []);
 
-  // Playback timer
+  // Simple playback simulation
   useEffect(() => {
-    let timer: any = null;
-    if (isPlaying) {
-      timer = setInterval(() => {
-        setTimelineIndex((prev) => (prev + 1) % timelineFrames.length);
-      }, 1200);
-    }
-    return () => clearInterval(timer);
+    if (!isPlaying) return;
+    const id = setInterval(() => {
+      setFrameIndex((i) => (i + 1) % 6);
+    }, 1100);
+    return () => clearInterval(id);
   }, [isPlaying]);
 
-  // AI Assistant Query
-  const handleSendAi = () => {
-    if (!chatInput.trim()) return;
-    const q = chatInput.trim();
-    setChatMessages((prev) => [...prev, { sender: 'user', text: q }]);
-    setChatInput('');
-    setTimeout(() => {
-      let ans = `Mesoanalysis for ${station.id}: Surface dew points in lower 70s support strong boundary-layer CAPE (>3,200 J/kg) with 0-1km SRH exceeding 250 m²/s².`;
-      const lower = q.toLowerCase();
-      if (lower.includes('tornado') || lower.includes('rotation') || lower.includes('tds')) {
-        ans = `[ROTATION DETECTED]: Gate-to-gate azimuthal shear of 48 kts identified on 0.5° tilt. CC drops to 0.76 inside the hook echo, confirming a Tornado Debris Signature (TDS).`;
-      } else if (lower.includes('hail') || lower.includes('mesh')) {
-        ans = `[HAIL CORES]: MESH analysis estimates 2.50-inch hail cores along the storm forward flank downdraft.`;
-      } else if (lower.includes('model') || lower.includes('hrrr')) {
-        ans = `[HRRR ENSEMBLE]: 3km HRRR maintains discrete supercells tracking ENE at 38 knots with intense updraft helicity swaths.`;
-      }
-      setChatMessages((prev) => [...prev, { sender: 'ai', text: ans }]);
-    }, 600);
-  };
+  const currentSite = RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
+  const productLabel = RADAR_PRODUCTS.find((p) => p.key === product)?.label || product.toUpperCase();
 
-  // ... rest of the component (JSX) goes here
-  // Make sure the return statement and all the UI code that was in the original file is included with real newlines.
+  return (
+    <div className="radar-app flex h-dvh w-full flex-col overflow-hidden bg-[#0b1220] text-slate-100">
+      {/* Top Toolbar */}
+      <header className="flex h-14 shrink-0 items-center gap-4 border-b border-slate-800 bg-[#0f172a] px-4">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 text-lg font-black text-white shadow-lg shadow-cyan-500/20">
+            ⚡
+          </div>
+          <div>
+            <div className="text-sm font-bold tracking-tight text-white">MesoVortex<span className="text-cyan-400">WX</span></div>
+            <div className="text-[10px] uppercase tracking-widest text-slate-400">Pro Radar · AI · Models</div>
+          </div>
+        </div>
+
+        <div className="ml-4 flex items-center gap-1 rounded-lg bg-slate-900/80 p-1">
+          {(['ref', 'vel', 'srvel', 'cc', 'zdr', 'kdp'] as RadarProduct[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => setProduct(p)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold uppercase transition ${
+                product === p
+                  ? 'bg-cyan-600 text-white shadow'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
+        <div className="ml-auto flex items-center gap-3">
+          <select
+            value={radarSite}
+            onChange={(e) => setRadarSite(e.target.value)}
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-cyan-500 focus:outline-none"
+          >
+            {RADAR_SITES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-1 rounded-lg bg-slate-900 p-1">
+            {(['street', 'terrain', 'satellite', 'globe'] as MapType[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setMapType(t)}
+                className={`rounded px-2.5 py-1 text-[11px] font-medium capitalize ${
+                  mapType === t ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setLayoutMode((m) => (m === 'single' ? 'dual' : 'single'))}
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-cyan-600 hover:text-cyan-300"
+          >
+            {layoutMode === 'single' ? 'Dual Pane' : 'Single'}
+          </button>
+
+          <button
+            onClick={() => setShowAssistant(true)}
+            className="rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:from-violet-500 hover:to-indigo-500"
+          >
+            AI Assistant
+          </button>
+        </div>
+      </header>
+
+      {/* Alert Banner */}
+      {alerts.length > 0 && (
+        <div className="shrink-0">
+          <AlertBanner alerts={alerts} />
+        </div>
+      )}
+
+      {/* Main Content */}
+      <div className="relative flex min-h-0 flex-1">
+        {/* Left Sidebar */}
+        <Sidebar
+          product={product}
+          setProduct={setProduct}
+          radarSite={radarSite}
+          setRadarSite={setRadarSite}
+        />
+
+        {/* Map Area */}
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          <div className={`grid min-h-0 flex-1 ${layoutMode === 'dual' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <div className="relative min-h-0">
+              <RadarMap product={product} radarSite={radarSite} mapType={mapType} />
+            </div>
+            {layoutMode === 'dual' && (
+              <div className="relative min-h-0 border-l border-slate-800">
+                <RadarMap product={product2} radarSite={radarSite} mapType={mapType} />
+              </div>
+            )}
+          </div>
+
+          {/* Timeline Bar */}
+          <div className="flex h-12 shrink-0 items-center gap-4 border-t border-slate-800 bg-[#0f172a]/90 px-4 backdrop-blur">
+            <button
+              onClick={() => setIsPlaying(!isPlaying)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-600 text-white hover:bg-cyan-500"
+            >
+              {isPlaying ? '❚❚' : '▶'}
+            </button>
+            <div className="flex flex-1 items-center gap-2">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800">
+                <div
+                  className="h-full rounded-full bg-cyan-500 transition-all"
+                  style={{ width: `${((frameIndex + 1) / 6) * 100}%` }}
+                />
+              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                {['-50m', '-40m', '-30m', '-20m', '-10m', 'LIVE'][frameIndex]}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-500">
+              {currentSite.name} · {productLabel}
+            </div>
+          </div>
+        </div>
+
+        {/* Right panels */}
+        {showMetar && (
+          <div className="w-80 shrink-0 border-l border-slate-800 bg-slate-950">
+            <METARPanel site={radarSite} onClose={() => setShowMetar(false)} />
+          </div>
+        )}
+      </div>
+
+      {/* AI Assistant Overlay */}
+      {showAssistant && (
+        <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/40 p-4 sm:items-center sm:justify-end">
+          <div className="h-[70vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
+            <WeatherAssistant
+              context={{
+                site: radarSite,
+                product: productLabel,
+                alerts: alerts.map((a) => a.properties?.event || 'Alert'),
+              }}
+              onClose={() => setShowAssistant(false)}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
