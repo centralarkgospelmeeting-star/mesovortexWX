@@ -50,17 +50,19 @@ export async function GET(request: Request) {
       next: { revalidate: 30 },
     });
 
-    if (res.ok) {
+      if (res.ok) {
       const data = await res.json();
       const scans: any[] = data.scans || data || [];
 
-      frames = scans
+      const mapped = scans
         .map((scan: any) => {
           const ts = scan.valid || scan.time || scan;
           const date = new Date(ts);
           if (isNaN(date.getTime())) return null;
+
           const ageMinutes = Math.round((now.getTime() - date.getTime()) / 60000);
           const stamp = formatIemTimestamp(date);
+
           return {
             time: date.toISOString(),
             label: ageMinutes <= 2 ? 'LIVE' : `-${ageMinutes}m`,
@@ -68,8 +70,9 @@ export async function GET(request: Request) {
             ageMinutes,
           };
         })
-        .filter(Boolean)
-        .sort((a: any, b: any) => a.ageMinutes - b.ageMinutes); // oldest → newest
+        .filter((f): f is { time: string; label: string; tileUrl: string; ageMinutes: number } => f !== null);
+
+      frames = mapped.sort((a, b) => a.ageMinutes - b.ageMinutes);
     }
   } catch (err) {
     console.error('IEM list failed, falling back to synthetic frames', err);
