@@ -2,14 +2,11 @@ import { NEXRAD_PRODUCT_CODES, RADAR_SITES } from '../../../../lib/radar-config'
 
 export const dynamic = 'force-dynamic';
 
-// IEM has two useful endpoints:
-// 1. Single-site ridge tiles
-// 2. CONUS composite (very reliable)
 const IEM_TILE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const siteId = (searchParams.get('site') ?? 'TLX').toUpperCase();
+  const siteId = (searchParams.get('site') ?? 'LZK').toUpperCase();
   const productKey = (searchParams.get('product') ?? 'ref').toLowerCase();
 
   const site =
@@ -17,9 +14,8 @@ export async function GET(request: Request) {
     RADAR_SITES.find((s) => s.radarId === siteId.replace(/^K/, '')) ||
     RADAR_SITES[0];
 
-  // Prefer modern product codes. N0B is the current 8-bit base reflectivity.
   const productMap: Record<string, string> = {
-    ref: 'N0B',   // was N0Q — N0B is more current on IEM
+    ref: 'N0B',
     vel: 'N0U',
     srvel: 'N0S',
     cc: 'N0C',
@@ -29,13 +25,9 @@ export async function GET(request: Request) {
 
   const productCode = productMap[productKey] || NEXRAD_PRODUCT_CODES[productKey] || 'N0B';
 
-  // 1. Single-site latest (primary)
   const singleSiteLatest = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
-
-  // 2. CONUS composite fallback (almost always has data)
   const compositeLatest = `${IEM_TILE}/nexrad-n0q-900913/{z}/{x}/{y}.png`;
 
-  // Simple loop frames (single-site)
   const now = new Date();
   const frames: { time: string; label: string; tileUrl: string; ageMinutes: number }[] = [];
 
@@ -59,7 +51,6 @@ export async function GET(request: Request) {
     });
   }
 
-  // LIVE frame at the end — try single-site first
   frames.push({
     time: now.toISOString(),
     label: 'LIVE',
@@ -74,17 +65,12 @@ export async function GET(request: Request) {
       siteId: site.id,
       product: productCode,
       productKey,
-      scheme: 'xyz',          // try xyz first — many IEM layers work better this way
+      scheme: 'xyz',
       frames,
       count: frames.length,
       latest: singleSiteLatest,
-      composite: compositeLatest, // backup the map can use
+      composite: compositeLatest,
     },
-    {
-      headers: {
-        'Cache-Control': 'no-store',
-        'Access-Control-Allow-Origin': '*',
-      },
-    }
+    { headers: { 'Cache-Control': 'no-store' } }
   );
 }
