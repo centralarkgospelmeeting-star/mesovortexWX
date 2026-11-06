@@ -26,6 +26,7 @@ type RadarMapProps = {
   frameUrl?: string | null;
   frameLabel?: string;
   showLightning?: boolean;
+  showMetars?: boolean;
   spotterReports?: SpotterPin[];
   onMapClickCoordinates?: (coords: [number, number]) => void;
 };
@@ -35,6 +36,10 @@ const RADAR_LAYER_ID = 'mesovortex-nexrad-layer';
 
 const LIGHTNING_SOURCE_ID = 'goes-glm-lightning';
 const LIGHTNING_LAYER_ID = 'goes-glm-lightning-layer';
+
+const METAR_SOURCE_ID = 'metar-stations';
+const METAR_CIRCLE_LAYER_ID = 'metar-stations-circle';
+const METAR_LABEL_LAYER_ID = 'metar-stations-label';
 
 const SITES_SOURCE_ID = 'nexrad-sites';
 const SITES_LAYER_ID = 'nexrad-sites-pills';
@@ -149,6 +154,7 @@ export function RadarMap({
   frameUrl = null,
   frameLabel,
   showLightning = true,
+  showMetars = false,
   spotterReports = [],
   onMapClickCoordinates,
 }: RadarMapProps) {
@@ -353,7 +359,118 @@ export function RadarMap({
     );
   }, [showLightning]);
 
-  // 4. Radar Layer
+  // 4. METAR Surface Observations Layer
+  const installMETARLayer = useCallback(async (map: MapLibreMap) => {
+    try {
+      const res = await fetch('/api/metar/geojson');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      // Transform properties so temperature is rounded and formatted in °F
+      const features = (data.features || []).map((f: any) => {
+        const c = f.properties?.temp;
+        const fahrenheit = c != null ? Math.round((c * 9) / 5 + 32) : null;
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            tempF: fahrenheit != null ? `${fahrenheit}°` : '',
+            tempNumber: fahrenheit,
+          },
+        };
+      });
+
+      const processedGeoJSON = { type: 'FeatureCollection', features };
+
+      if (!map.getSource(METAR_SOURCE_ID)) {
+        map.addSource(METAR_SOURCE_ID, {
+          type: 'geojson',
+          data: processedGeoJSON,
+        });
+
+        // Small dot colored by flight rules (VFR: green, MVFR: blue, IFR: red, LIFR: magenta)
+        map.addLayer({
+          id: METAR_CIRCLE_LAYER_ID,
+          type: 'circle',
+          source: METAR_SOURCE_ID,
+          paint: {
+            'circle-radius': 4.5,
+            'circle-color': [
+              'match',
+              ['get', 'fltcat'],
+              'VFR', '#22c55e',
+              'MVFR', '#3b82f6',
+              'IFR', '#ef4444',
+              'LIFR', '#d946ef',
+              '#94a3b8',
+            ],
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#0f172a',
+          },
+          layout: {
+            visibility: showMetars ? 'visible' : 'none',
+          },
+        });
+
+        // Temperature label right beside the dot
+        map.addLayer({
+          id: METAR_LABEL_LAYER_ID,
+          type: 'symbol',
+          source: METAR_SOURCE_ID,
+          layout: {
+            'text-field': ['get', 'tempF'],
+            'text-size': 11,
+            'text-offset': [1.2, 0],
+            'text-anchor': 'left',
+            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+            visibility: showMetars ? 'visible' : 'none',
+          },
+          paint: {
+            'text-color': '#f8fafc',
+            'text-halo-color': '#020617',
+            'text-halo-width': 1.5,
+          },
+        });
+
+        // METAR Click Popup
+        map.on('click', METAR_CIRCLE_LAYER_ID, (e) => {
+          const props = e.features?.[0]?.properties;
+          if (!props) return;
+
+          const dewpF = props.dewp != null ? `${Math.round((props.dewp * 9) / 5 + 32)}°F` : 'N/A';
+          const wind = props.wspd != null ? `${props.wdir || 'VRB'}° @ ${props.wspd} kt` : 'Calm';
+          const gust = props.wgst ? ` G ${props.wgst} kt` : '';
+
+          new maplibregl.Popup({ closeButton: true, offset: 8 })
+            .setLngLat(e.lngLat)
+            .setHTML(
+              `<div style="font-family:system-ui;padding:4px 6px;min-width:170px;">
+                <b style="color:#38bdf8;font-size:13px;">${props.id || 'METAR Station'}</b>
+                <span style="font-size:10px;background:#334155;color:#f8fafc;padding:1px 5px;border-radius:4px;margin-left:6px;">${props.fltcat || 'VFR'}</span>
+                <div style="font-size:12px;margin-top:5px;color:#0f172a;font-weight:bold;">
+                  Temp: <span style="color:#0284c7;">${props.tempF}</span> | Dew: <span style="color:#0d9488;">${dewpF}</span>
+                </div>
+                <div style="font-size:11px;color:#475569;margin-top:3px;">Wind: <b>${wind}${gust}</b></div>
+                <div style="font-size:10px;color:#64748b;margin-top:2px;">Altimeter: ${props.altim ? (props.altim / 100).toFixed(2) + ' inHg' : 'N/A'}</div>
+              </div>`
+            )
+            .addTo(map);
+        });
+
+        map.on('mouseenter', METAR_CIRCLE_LAYER_ID, () => {
+          map.getCanvas().style.cursor = 'pointer';
+        });
+
+        map.on('mouseleave', METAR_CIRCLE_LAYER_ID, () => {
+          map.getCanvas().style.cursor = '';
+        });
+      }
+    } catch (err) {
+      console.warn('Could not load METAR layer:', err);
+    }
+  }, [showMetars]);
+
+  // 5. Radar Layer
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -398,7 +515,7 @@ export function RadarMap({
     []
   );
 
-  // 5. Spotter Pins
+  // 6. Spotter Pins
   const installOrUpdateSpotterPins = useCallback(
     (map: MapLibreMap, pins: SpotterPin[]) => {
       const features = pins.map((p) => ({
@@ -500,7 +617,7 @@ export function RadarMap({
     []
   );
 
-  // 6. NEXRAD Sites
+  // 7. NEXRAD Sites
   const installSiteMarkers = useCallback(
     (map: MapLibreMap) => {
       if (map.getSource(SITES_SOURCE_ID)) return;
@@ -617,6 +734,7 @@ export function RadarMap({
       await installSPCOutlooks(map);
       await installOrUpdateNWSWarnings(map);
       installLightningLayer(map);
+      await installMETARLayer(map);
       installSiteMarkers(map);
       installOrUpdateSpotterPins(map, allSpotters);
 
@@ -631,7 +749,7 @@ export function RadarMap({
       ];
 
       const features = map.queryRenderedFeatures(bbox, {
-        layers: [SITES_LAYER_ID, SPOTTER_LAYER_ID, NWS_WARNINGS_FILL_ID],
+        layers: [SITES_LAYER_ID, SPOTTER_LAYER_ID, NWS_WARNINGS_FILL_ID, METAR_CIRCLE_LAYER_ID],
       });
 
       if (features.length > 0) return;
@@ -680,6 +798,17 @@ export function RadarMap({
       );
     }
   }, [showLightning, mapReady]);
+
+  // Toggle METAR Layer Visibility
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (map.getLayer(METAR_CIRCLE_LAYER_ID) && map.getLayer(METAR_LABEL_LAYER_ID)) {
+      const visibility = showMetars ? 'visible' : 'none';
+      map.setLayoutProperty(METAR_CIRCLE_LAYER_ID, 'visibility', visibility);
+      map.setLayoutProperty(METAR_LABEL_LAYER_ID, 'visibility', visibility);
+    }
+  }, [showMetars, mapReady]);
 
   useEffect(() => {
     if (mapRef.current && mapReady) {
