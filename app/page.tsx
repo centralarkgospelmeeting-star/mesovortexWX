@@ -27,6 +27,7 @@ export default function MesoVortexWX() {
   const [showAssistant, setShowAssistant] = useState(false);
   const [showQuad, setShowQuad] = useState(false);
   const [showLightning, setShowLightning] = useState(true);
+  const [showMetars, setShowMetars] = useState(false);
   const [cardExpanded, setCardExpanded] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -141,6 +142,7 @@ export default function MesoVortexWX() {
             frameUrl={currentFrame?.tileUrl ?? null}
             frameLabel={currentFrame?.label}
             showLightning={showLightning}
+            showMetars={showMetars}
             spotterReports={spotterReports}
             onMapClickCoordinates={(coords) => setSpotterCoords(coords)}
           />
@@ -152,6 +154,7 @@ export default function MesoVortexWX() {
               radarSite={radarSite}
               mapType={mapType}
               showLightning={showLightning}
+              showMetars={showMetars}
             />
           </div>
         )}
@@ -232,7 +235,6 @@ export default function MesoVortexWX() {
         >
           ⊞
         </button>
-        {/* NEW: Lightning Toggle Button */}
         <button
           onClick={() => setShowLightning((v) => !v)}
           className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
@@ -243,6 +245,18 @@ export default function MesoVortexWX() {
           title="Toggle Live Lightning (GOES GLM)"
         >
           ⚡
+        </button>
+        {/* NEW: METAR Stations Toggle Button */}
+        <button
+          onClick={() => setShowMetars((v) => !v)}
+          className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
+            showMetars
+              ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.3)]'
+              : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
+          }`}
+          title="Toggle Surface METAR Weather Stations"
+        >
+          🌡️
         </button>
       </div>
 
