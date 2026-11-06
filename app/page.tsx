@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
-import { RadarMap } from '../components/RadarMap';
+import { RadarMap, SpotterPin } from '../components/RadarMap';
 import { WeatherAssistant } from '../components/WeatherAssistant';
 import { EmergencyAlertTone } from '../components/EmergencyAlertTone';
 import { SynchronizedQuadView } from '../components/SynchronizedQuadView';
+import { SpotterReportModal, SpotterReport } from '../components/SpotterReportModal';
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 
 type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
@@ -27,6 +28,10 @@ export default function MesoVortexWX() {
   const [showQuad, setShowQuad] = useState(false);
   const [cardExpanded, setCardExpanded] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Spotter reporting state
+  const [spotterCoords, setSpotterCoords] = useState<[number, number] | null>(null);
+  const [spotterReports, setSpotterReports] = useState<SpotterPin[]>([]);
 
   // Customizations
   const [radarOpacity, setRadarOpacity] = useState(0.85);
@@ -108,6 +113,21 @@ export default function MesoVortexWX() {
     });
   };
 
+  const handleSpotterSubmit = (report: SpotterReport) => {
+    const pin: SpotterPin = {
+      id: report.id,
+      hazardType: report.hazardType,
+      description: report.description,
+      hailSize: report.hailSize,
+      lat: report.lat,
+      lon: report.lon,
+      timestamp: report.timestamp,
+      callsign: report.callsign,
+    };
+    setSpotterReports((prev) => [...prev, pin]);
+    setSpotterCoords(null);
+  };
+
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-[#0b1220] text-slate-100">
       {/* FULL SCREEN MAP */}
@@ -119,6 +139,8 @@ export default function MesoVortexWX() {
             mapType={mapType}
             frameUrl={currentFrame?.tileUrl ?? null}
             frameLabel={currentFrame?.label}
+            spotterReports={spotterReports}
+            onMapClickCoordinates={(coords) => setSpotterCoords(coords)}
           />
         </div>
         {dualPane && (
@@ -414,6 +436,15 @@ export default function MesoVortexWX() {
         <SynchronizedQuadView
           radarSite={radarSite}
           onClose={() => setShowQuad(false)}
+        />
+      )}
+
+      {/* Spotter Observation Submission Modal */}
+      {spotterCoords && (
+        <SpotterReportModal
+          currentCoords={spotterCoords}
+          onClose={() => setSpotterCoords(null)}
+          onSubmit={handleSpotterSubmit}
         />
       )}
 
