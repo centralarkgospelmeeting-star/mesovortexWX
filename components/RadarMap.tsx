@@ -25,12 +25,16 @@ type RadarMapProps = {
   mapType: MapType;
   frameUrl?: string | null;
   frameLabel?: string;
+  showLightning?: boolean;
   spotterReports?: SpotterPin[];
   onMapClickCoordinates?: (coords: [number, number]) => void;
 };
 
 const RADAR_SOURCE_ID = 'mesovortex-nexrad';
 const RADAR_LAYER_ID = 'mesovortex-nexrad-layer';
+
+const LIGHTNING_SOURCE_ID = 'goes-glm-lightning';
+const LIGHTNING_LAYER_ID = 'goes-glm-lightning-layer';
 
 const SITES_SOURCE_ID = 'nexrad-sites';
 const SITES_LAYER_ID = 'nexrad-sites-pills';
@@ -144,6 +148,7 @@ export function RadarMap({
   mapType,
   frameUrl = null,
   frameLabel,
+  showLightning = true,
   spotterReports = [],
   onMapClickCoordinates,
 }: RadarMapProps) {
@@ -315,7 +320,40 @@ export function RadarMap({
     }
   }, []);
 
-  // 3. Radar Layer
+  // 3. Lightning Layer (NOAA GOES GLM)
+  const installLightningLayer = useCallback((map: MapLibreMap) => {
+    if (map.getSource(LIGHTNING_SOURCE_ID)) return;
+
+    map.addSource(LIGHTNING_SOURCE_ID, {
+      type: 'raster',
+      tiles: ['https://realearth.ssec.wisc.edu/tiles/GOESEastGLMFEDRadC/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: 'NOAA GOES GLM Lightning © UW-SSEC RealEarth',
+    });
+
+    const beforeId = map.getLayer(NWS_WARNINGS_FILL_ID)
+      ? NWS_WARNINGS_FILL_ID
+      : map.getLayer(SITES_LAYER_ID)
+      ? SITES_LAYER_ID
+      : undefined;
+
+    map.addLayer(
+      {
+        id: LIGHTNING_LAYER_ID,
+        type: 'raster',
+        source: LIGHTNING_SOURCE_ID,
+        paint: {
+          'raster-opacity': 0.88,
+        },
+        layout: {
+          visibility: showLightning ? 'visible' : 'none',
+        },
+      },
+      beforeId
+    );
+  }, [showLightning]);
+
+  // 4. Radar Layer
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -336,12 +374,11 @@ export function RadarMap({
         attribution: 'NEXRAD Level III via Iowa Environmental Mesonet',
       });
 
-      const beforeId =
-        map.getLayer(NWS_WARNINGS_FILL_ID)
-          ? NWS_WARNINGS_FILL_ID
-          : map.getLayer(SITES_LAYER_ID)
-          ? SITES_LAYER_ID
-          : undefined;
+      const beforeId = map.getLayer(LIGHTNING_LAYER_ID)
+        ? LIGHTNING_LAYER_ID
+        : map.getLayer(NWS_WARNINGS_FILL_ID)
+        ? NWS_WARNINGS_FILL_ID
+        : undefined;
 
       map.addLayer(
         {
@@ -361,7 +398,7 @@ export function RadarMap({
     []
   );
 
-  // 4. Spotter Pins
+  // 5. Spotter Pins
   const installOrUpdateSpotterPins = useCallback(
     (map: MapLibreMap, pins: SpotterPin[]) => {
       const features = pins.map((p) => ({
@@ -463,7 +500,7 @@ export function RadarMap({
     []
   );
 
-  // 5. NEXRAD Radar Sites
+  // 6. NEXRAD Sites
   const installSiteMarkers = useCallback(
     (map: MapLibreMap) => {
       if (map.getSource(SITES_SOURCE_ID)) return;
@@ -579,6 +616,7 @@ export function RadarMap({
 
       await installSPCOutlooks(map);
       await installOrUpdateNWSWarnings(map);
+      installLightningLayer(map);
       installSiteMarkers(map);
       installOrUpdateSpotterPins(map, allSpotters);
 
@@ -629,6 +667,19 @@ export function RadarMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapType]);
+
+  // Toggle Lightning Layer Visibility
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (map.getLayer(LIGHTNING_LAYER_ID)) {
+      map.setLayoutProperty(
+        LIGHTNING_LAYER_ID,
+        'visibility',
+        showLightning ? 'visible' : 'none'
+      );
+    }
+  }, [showLightning, mapReady]);
 
   useEffect(() => {
     if (mapRef.current && mapReady) {
@@ -753,15 +804,17 @@ export function RadarMap({
 
       <div className="pointer-events-none absolute bottom-3 right-3 z-10 hidden sm:flex items-center gap-3 rounded-md bg-slate-950/80 px-2.5 py-1 text-[10px] text-slate-400 backdrop-blur">
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full bg-red-600" /> TOR Warning
+          <span className="inline-block h-2 w-2 rounded-full bg-red-600" /> TOR
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> SVR Warning
+          <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> SVR
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" /> FFW Warning
+          <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" /> FFW
         </span>
-        <span className="text-slate-500">| Click map to place Spotter Pin</span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-full bg-cyan-400" /> ⚡ GLM
+        </span>
       </div>
     </div>
   );
