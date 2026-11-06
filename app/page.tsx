@@ -26,6 +26,7 @@ export default function MesoVortexWX() {
   const [mapType, setMapType] = useState<MapType>('street');
   const [showAssistant, setShowAssistant] = useState(false);
   const [showQuad, setShowQuad] = useState(false);
+  const [showLightning, setShowLightning] = useState(true);
   const [cardExpanded, setCardExpanded] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -139,6 +140,7 @@ export default function MesoVortexWX() {
             mapType={mapType}
             frameUrl={currentFrame?.tileUrl ?? null}
             frameLabel={currentFrame?.label}
+            showLightning={showLightning}
             spotterReports={spotterReports}
             onMapClickCoordinates={(coords) => setSpotterCoords(coords)}
           />
@@ -149,6 +151,7 @@ export default function MesoVortexWX() {
               product={product2}
               radarSite={radarSite}
               mapType={mapType}
+              showLightning={showLightning}
             />
           </div>
         )}
@@ -228,6 +231,18 @@ export default function MesoVortexWX() {
           title="Quad Synchro View"
         >
           ⊞
+        </button>
+        {/* NEW: Lightning Toggle Button */}
+        <button
+          onClick={() => setShowLightning((v) => !v)}
+          className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
+            showLightning
+              ? 'border-amber-400/50 bg-amber-500/20 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.3)]'
+              : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
+          }`}
+          title="Toggle Live Lightning (GOES GLM)"
+        >
+          ⚡
         </button>
       </div>
 
