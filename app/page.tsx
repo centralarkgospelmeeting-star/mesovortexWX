@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { RadarMap } from '../components/RadarMap';
 import { WeatherAssistant } from '../components/WeatherAssistant';
-import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 import { EmergencyAlertTone } from '../components/EmergencyAlertTone';
+import { SynchronizedQuadView } from '../components/SynchronizedQuadView';
+import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 
 type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
 type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
@@ -23,6 +24,7 @@ export default function MesoVortexWX() {
   const [radarSite, setRadarSite] = useState('KLZK');
   const [mapType, setMapType] = useState<MapType>('street');
   const [showAssistant, setShowAssistant] = useState(false);
+  const [showQuad, setShowQuad] = useState(false);
   const [cardExpanded, setCardExpanded] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -198,6 +200,13 @@ export default function MesoVortexWX() {
         >
           ▦
         </button>
+        <button
+          onClick={() => setShowQuad(true)}
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-slate-950/80 text-cyan-400 shadow-lg backdrop-blur hover:bg-slate-900"
+          title="Quad Synchro View"
+        >
+          ⊞
+        </button>
       </div>
 
       {/* SETTINGS PANEL */}
@@ -282,7 +291,6 @@ export default function MesoVortexWX() {
       {/* COLLAPSIBLE BOTTOM-LEFT PRODUCT CARD */}
       <div className="absolute bottom-4 left-4 z-30 w-[300px]">
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/90 shadow-2xl backdrop-blur-xl">
-          {/* Always-visible header */}
           <div
             className="flex cursor-pointer items-center gap-3 px-3.5 py-2.5"
             onClick={() => setCardExpanded((v) => !v)}
@@ -324,7 +332,6 @@ export default function MesoVortexWX() {
             <span className="text-slate-500">{cardExpanded ? '▾' : '▴'}</span>
           </div>
 
-          {/* Expanded */}
           {cardExpanded && (
             <div className="border-t border-white/10 px-3 pb-3 pt-2">
               <select
@@ -386,7 +393,7 @@ export default function MesoVortexWX() {
         </div>
       </div>
 
-      {/* AI Assistant */}
+      {/* AI Assistant Modal */}
       {showAssistant && (
         <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
           <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
@@ -397,11 +404,21 @@ export default function MesoVortexWX() {
                 alerts: [],
               }}
               onClose={() => setShowAssistant(false)}
-              <EmergencyAlertTone />
             />
           </div>
         </div>
       )}
+
+      {/* Quad Synchro View Modal */}
+      {showQuad && (
+        <SynchronizedQuadView
+          radarSite={radarSite}
+          onClose={() => setShowQuad(false)}
+        />
+      )}
+
+      {/* Live Warning Siren Audio Engine */}
+      <EmergencyAlertTone />
     </div>
   );
 }
