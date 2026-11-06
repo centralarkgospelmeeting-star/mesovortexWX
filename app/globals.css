@@ -21,22 +21,34 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* ======================================================== */
-/* WEATHERWISE ON-MAP RADAR TOWER PILLS                     */
-/* ======================================================== */
+/* Force MapLibre to stretch and fill all 100% of the screen */
+.maplibregl-map {
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute !important;
+  inset: 0 !important;
+}
+
+.maplibregl-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  outline: none;
+}
+
+/* WeatherWise On-Map Radar Tower Pills */
 .ww-radar-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 3px 8px;
   border-radius: 9999px;
-  background: rgba(15, 23, 42, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   color: #cbd5e1;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(8px);
   cursor: pointer;
   user-select: none;
@@ -46,11 +58,11 @@ html, body {
 }
 
 .ww-radar-pill:hover {
-  background: rgba(30, 41, 59, 0.95);
+  background: rgba(30, 41, 59, 0.98);
   border-color: #38bdf8;
   color: #ffffff;
   transform: translate(-50%, -50%) scale(1.08);
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.45);
   z-index: 50;
 }
 
@@ -58,7 +70,7 @@ html, body {
   background: rgba(8, 47, 73, 0.95);
   border: 1.5px solid #06b6d4;
   color: #67e8f9;
-  box-shadow: 0 0 18px rgba(6, 182, 212, 0.6);
+  box-shadow: 0 0 18px rgba(6, 182, 212, 0.65);
   z-index: 60;
 }
 
@@ -78,10 +90,5 @@ html, body {
 
 @keyframes ww-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.2); }
-}
-
-/* Custom map canvas outline reset */
-.maplibregl-canvas {
-  outline: none;
+  50% { opacity: 0.4; transform: scale(1.2); }
 }
