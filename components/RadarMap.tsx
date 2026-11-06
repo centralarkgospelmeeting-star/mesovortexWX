@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -40,25 +41,35 @@ function makeStyle(mapType: MapType): StyleSpecification {
           }
         : {
             type: 'raster',
-            tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tiles: [
+              'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            ],
             tileSize: 256,
             maxzoom: 19,
             attribution: '© OpenStreetMap contributors',
           },
+
       [TERRAIN_SOURCE_ID]: {
         type: 'raster-dem',
         url: 'https://tiles.mapterhorn.com/tilejson.json',
         tileSize: 256,
         attribution: 'Terrain © MapTiler/Mapterhorn',
       },
+
       'hillshade-source': {
         type: 'raster-dem',
         url: 'https://tiles.mapterhorn.com/tilejson.json',
         tileSize: 256,
       },
     },
+
     layers: [
-      { id: 'basemap-layer', type: 'raster', source: 'basemap' },
+      {
+        id: 'basemap-layer',
+        type: 'raster',
+        source: 'basemap',
+      },
+
       ...(mapType === 'terrain'
         ? [
             {
@@ -73,16 +84,33 @@ function makeStyle(mapType: MapType): StyleSpecification {
           ]
         : []),
     ],
+
     ...(mapType === 'globe'
       ? {
           projection: { type: 'globe' as const },
           sky: {
-            'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0],
+            'atmosphere-blend': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              1,
+              5,
+              1,
+              7,
+              0,
+            ],
           },
         }
       : {}),
+
     ...(mapType === 'terrain'
-      ? { terrain: { source: TERRAIN_SOURCE_ID, exaggeration: 1 } }
+      ? {
+          terrain: {
+            source: TERRAIN_SOURCE_ID,
+            exaggeration: 1,
+          },
+        }
       : {}),
   };
 }
@@ -97,141 +125,185 @@ export function RadarMap({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const currentTileUrlRef = useRef<string | null>(null);
-  const [radarStatus, setRadarStatus] = useState('Initializing map…');
+
+  const [radarStatus, setRadarStatus] = useState(
+    'Initializing map…'
+  );
+
   const [mapReady, setMapReady] = useState(false);
 
   const site =
-    RADAR_SITES.find((s) => s.id === radarSite || s.radarId === radarSite) ||
-    RADAR_SITES[0];
+    RADAR_SITES.find(
+      (s) => s.id === radarSite || s.radarId === radarSite
+    ) || RADAR_SITES[0];
 
   const productLabel = product.toUpperCase();
 
-  // ---------- Pill-shaped site markers ----------
-  const installSiteMarkers = useCallback((map: MapLibreMap) => {
-    if (map.getSource(SITES_SOURCE_ID)) return;
+  // ----------------------------------------
+  // NEXRAD SITE MARKERS
+  // ----------------------------------------
 
-    const features = RADAR_SITES.map((s) => ({
-      type: 'Feature' as const,
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [s.lon, s.lat],
-      },
-      properties: {
-        radarId: s.radarId,
-        name: s.name,
-        id: s.id,
-        isActive: s.id === radarSite || s.radarId === radarSite,
-      },
-    }));
+  const installSiteMarkers = useCallback(
+    (map: MapLibreMap) => {
+      if (map.getSource(SITES_SOURCE_ID)) return;
 
-    map.addSource(SITES_SOURCE_ID, {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features,
-      },
-    });
+      const features = RADAR_SITES.map((s) => ({
+        type: 'Feature' as const,
 
-    // Pill background (rounded rectangle look using circle + stretch)
-    map.addLayer({
-      id: SITES_LAYER_ID,
-      type: 'circle',
-      source: SITES_SOURCE_ID,
-      paint: {
-        'circle-radius': [
-          'case',
-          ['get', 'isActive'],
-          18,
-          14,
-        ],
-        'circle-color': [
-          'case',
-          ['get', 'isActive'],
-          '#0891b2', // cyan-600 for active
-          '#1e293b', // slate-800
-        ],
-        'circle-stroke-width': 2,
-        'circle-stroke-color': [
-          'case',
-          ['get', 'isActive'],
-          '#22d3ee',
-          '#475569',
-        ],
-        'circle-opacity': 0.95,
-        'circle-pitch-alignment': 'map',
-      },
-    });
-
-    // Radar ID text inside the pill
-    map.addLayer({
-      id: SITES_LABEL_LAYER_ID,
-      type: 'symbol',
-      source: SITES_SOURCE_ID,
-      layout: {
-        'text-field': ['get', 'radarId'],
-        'text-size': [
-          'case',
-          ['get', 'isActive'],
-          11,
-          10,
-        ],
-        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-        'text-anchor': 'center',
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
-      },
-      paint: {
-        'text-color': '#f1f5f9',
-        'text-halo-color': 'rgba(0,0,0,0.6)',
-        'text-halo-width': 1,
-      },
-    });
-  }, [radarSite]);
-
-  const installOrUpdateRadarLayer = useCallback((map: MapLibreMap, tileUrl: string) => {
-    if (!tileUrl) return;
-
-    if (map.getLayer(RADAR_LAYER_ID)) {
-      map.removeLayer(RADAR_LAYER_ID);
-    }
-    if (map.getSource(RADAR_SOURCE_ID)) {
-      map.removeSource(RADAR_SOURCE_ID);
-    }
-
-    map.addSource(RADAR_SOURCE_ID, {
-      type: 'raster',
-      tiles: [tileUrl],
-      tileSize: 256,
-      scheme: 'xyz
-      attribution: 'NEXRAD Level III via Iowa Environmental Mesonet',
-    });
-
-    const beforeId = map.getLayer(SITES_LAYER_ID) ? SITES_LAYER_ID : undefined;
-
-    map.addLayer(
-      {
-        id: RADAR_LAYER_ID,
-        type: 'raster',
-        source: RADAR_SOURCE_ID,
-        paint: {
-          'raster-opacity': 0.9,
-          'raster-fade-duration': 0,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [s.lon, s.lat],
         },
-      },
-      beforeId
-    );
 
-    currentTileUrlRef.current = tileUrl;
-  }, []);
+        properties: {
+          radarId: s.radarId,
+          name: s.name,
+          id: s.id,
+          isActive:
+            s.id === radarSite || s.radarId === radarSite,
+        },
+      }));
 
-  // ---------- Create map ----------
+      map.addSource(SITES_SOURCE_ID, {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features,
+        },
+      });
+
+      // Radar site markers
+      map.addLayer({
+        id: SITES_LAYER_ID,
+        type: 'circle',
+        source: SITES_SOURCE_ID,
+
+        paint: {
+          'circle-radius': [
+            'case',
+            ['get', 'isActive'],
+            18,
+            14,
+          ],
+
+          'circle-color': [
+            'case',
+            ['get', 'isActive'],
+            '#0891b2',
+            '#1e293b',
+          ],
+
+          'circle-stroke-width': 2,
+
+          'circle-stroke-color': [
+            'case',
+            ['get', 'isActive'],
+            '#22d3ee',
+            '#475569',
+          ],
+
+          'circle-opacity': 0.95,
+          'circle-pitch-alignment': 'map',
+        },
+      });
+
+      // Radar ID labels
+      map.addLayer({
+        id: SITES_LABEL_LAYER_ID,
+        type: 'symbol',
+        source: SITES_SOURCE_ID,
+
+        layout: {
+          'text-field': ['get', 'radarId'],
+
+          'text-size': [
+            'case',
+            ['get', 'isActive'],
+            11,
+            10,
+          ],
+
+          'text-font': [
+            'Open Sans Bold',
+            'Arial Unicode MS Bold',
+          ],
+
+          'text-anchor': 'center',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+
+        paint: {
+          'text-color': '#f1f5f9',
+          'text-halo-color': 'rgba(0,0,0,0.6)',
+          'text-halo-width': 1,
+        },
+      });
+    },
+    [radarSite]
+  );
+
+  // ----------------------------------------
+  // RADAR TILE LAYER
+  // ----------------------------------------
+
+  const installOrUpdateRadarLayer = useCallback(
+    (map: MapLibreMap, tileUrl: string) => {
+      if (!tileUrl) return;
+
+      if (map.getLayer(RADAR_LAYER_ID)) {
+        map.removeLayer(RADAR_LAYER_ID);
+      }
+
+      if (map.getSource(RADAR_SOURCE_ID)) {
+        map.removeSource(RADAR_SOURCE_ID);
+      }
+
+      map.addSource(RADAR_SOURCE_ID, {
+        type: 'raster',
+        tiles: [tileUrl],
+        tileSize: 256,
+        scheme: 'xyz',
+        attribution:
+          'NEXRAD Level III via Iowa Environmental Mesonet',
+      });
+
+      const beforeId = map.getLayer(SITES_LAYER_ID)
+        ? SITES_LAYER_ID
+        : undefined;
+
+      map.addLayer(
+        {
+          id: RADAR_LAYER_ID,
+          type: 'raster',
+          source: RADAR_SOURCE_ID,
+
+          paint: {
+            'raster-opacity': 0.9,
+            'raster-fade-duration': 0,
+          },
+        },
+        beforeId
+      );
+
+      currentTileUrlRef.current = tileUrl;
+    },
+    []
+  );
+
+  // ----------------------------------------
+  // CREATE MAP
+  // ----------------------------------------
+
   useEffect(() => {
     if (!containerRef.current) return;
+
+    setMapReady(false);
+    currentTileUrlRef.current = null;
 
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
-      setMapReady(false);
     }
 
     const map = new maplibregl.Map({
@@ -239,60 +311,113 @@ export function RadarMap({
       style: makeStyle(mapType),
       center: [site.lon, site.lat],
       zoom: 7.2,
-      attributionControl: { compact: true },
+      attributionControl: {
+        compact: true,
+      },
     });
-
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-    map.addControl(new maplibregl.ScaleControl({ maxWidth: 120 }), 'bottom-left');
 
     mapRef.current = map;
 
+    map.addControl(
+      new maplibregl.NavigationControl({
+        visualizePitch: true,
+      }),
+      'top-right'
+    );
+
+    map.addControl(
+      new maplibregl.ScaleControl({
+        maxWidth: 120,
+      }),
+      'bottom-left'
+    );
+
     map.on('load', () => {
       if (mapType === 'terrain') {
-        map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 1 });
+        map.setTerrain({
+          source: TERRAIN_SOURCE_ID,
+          exaggeration: 1,
+        });
       }
+
       installSiteMarkers(map);
+
+      // Register interactions after the marker layers exist.
+      map.on('click', SITES_LAYER_ID, (e) => {
+        const feature = e.features?.[0];
+
+        if (!feature || feature.geometry.type !== 'Point') {
+          return;
+        }
+
+        const coords = (
+          feature.geometry as GeoJSON.Point
+        ).coordinates.slice() as [number, number];
+
+        const props = feature.properties as {
+          radarId: string;
+          name: string;
+        } | null;
+
+        if (!props) return;
+
+        const popupContent = document.createElement('div');
+        popupContent.style.fontFamily = 'system-ui';
+        popupContent.style.padding = '2px 4px';
+
+        const title = document.createElement('strong');
+        title.style.color = '#22d3ee';
+        title.textContent = `NEXRAD ${props.radarId}`;
+
+        const name = document.createElement('div');
+        name.style.color = '#94a3b8';
+        name.style.fontSize = '12px';
+        name.textContent = props.name;
+
+        popupContent.append(title, name);
+
+        new maplibregl.Popup({
+          closeButton: true,
+          offset: 14,
+        })
+          .setLngLat(coords)
+          .setDOMContent(popupContent)
+          .addTo(map);
+      });
+
+      map.on('mouseenter', SITES_LAYER_ID, () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+
+      map.on('mouseleave', SITES_LAYER_ID, () => {
+        map.getCanvas().style.cursor = '';
+      });
+
       setMapReady(true);
       setRadarStatus(`Map ready · ${site.radarId}`);
     });
 
-    map.on('click', SITES_LAYER_ID, (e) => {
-      const feature = e.features?.[0];
-      if (!feature || feature.geometry.type !== 'Point') return;
-
-      const coords = (feature.geometry as GeoJSON.Point).coordinates.slice() as [number, number];
-      const props = feature.properties as { radarId: string; name: string } | null;
-      if (!props) return;
-
-      new maplibregl.Popup({ closeButton: true, offset: 14 })
-        .setLngLat(coords)
-        .setHTML(
-          `<div style="font-family:system-ui;padding:2px 4px">
-            <strong style="color:#22d3ee">NEXRAD ${props.radarId}</strong><br/>
-            <span style="color:#94a3b8;font-size:12px">${props.name}</span>
-          </div>`
-        )
-        .addTo(map);
-    });
-
-    map.on('mouseenter', SITES_LAYER_ID, () => {
-      map.getCanvas().style.cursor = 'pointer';
-    });
-    map.on('mouseleave', SITES_LAYER_ID, () => {
-      map.getCanvas().style.cursor = '';
+    map.on('error', (event) => {
+      console.error('MapLibre error:', event.error);
     });
 
     return () => {
       map.remove();
       mapRef.current = null;
-      setMapReady(false);
+      currentTileUrlRef.current = null;
     };
+
+    // Map is recreated when the map type changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapType]);
 
-  // ---------- Fly to site ----------
+  // ----------------------------------------
+  // FLY TO SELECTED RADAR SITE
+  // ----------------------------------------
+
   useEffect(() => {
     const map = mapRef.current;
+
     if (!map || !mapReady) return;
 
     map.flyTo({
@@ -302,40 +427,64 @@ export function RadarMap({
       duration: 1100,
     });
 
-    // Update active pill styling
-    if (map.getSource(SITES_SOURCE_ID)) {
+    const source = map.getSource(SITES_SOURCE_ID);
+
+    if (source) {
       const features = RADAR_SITES.map((s) => ({
         type: 'Feature' as const,
+
         geometry: {
           type: 'Point' as const,
           coordinates: [s.lon, s.lat],
         },
+
         properties: {
           radarId: s.radarId,
           name: s.name,
           id: s.id,
-          isActive: s.id === site.id || s.radarId === site.radarId,
+          isActive:
+            s.id === site.id || s.radarId === site.radarId,
         },
       }));
 
-      (map.getSource(SITES_SOURCE_ID) as maplibregl.GeoJSONSource).setData({
+      (source as maplibregl.GeoJSONSource).setData({
         type: 'FeatureCollection',
         features,
       });
     }
-  }, [site.id, mapReady]);
+  }, [site.id, site.lon, site.lat, site.radarId, mapReady]);
 
-  // ---------- Parent-driven frames ----------
+  // ----------------------------------------
+  // PARENT-DRIVEN RADAR FRAMES
+  // ----------------------------------------
+
   useEffect(() => {
     const map = mapRef.current;
+
     if (!map || !mapReady || !frameUrl) return;
+
     if (frameUrl === currentTileUrlRef.current) return;
 
     installOrUpdateRadarLayer(map, frameUrl);
-    setRadarStatus(`NEXRAD ${site.radarId} · ${productLabel} · ${frameLabel || 'frame'}`);
-  }, [frameUrl, frameLabel, mapReady, site.radarId, productLabel, installOrUpdateRadarLayer]);
 
-  // ---------- Fallback latest ----------
+    setRadarStatus(
+      `NEXRAD ${site.radarId} · ${productLabel} · ${
+        frameLabel || 'frame'
+      }`
+    );
+  }, [
+    frameUrl,
+    frameLabel,
+    mapReady,
+    site.radarId,
+    productLabel,
+    installOrUpdateRadarLayer,
+  ]);
+
+  // ----------------------------------------
+  // FALLBACK: LOAD LATEST RADAR FRAME
+  // ----------------------------------------
+
   useEffect(() => {
     if (!mapReady || frameUrl) return;
 
@@ -343,20 +492,32 @@ export function RadarMap({
 
     async function loadLatest() {
       const map = mapRef.current;
+
       if (!map || cancelled) return;
 
       try {
-        setRadarStatus(`Loading ${site.radarId} ${productLabel}…`);
+        setRadarStatus(
+          `Loading ${site.radarId} ${productLabel}…`
+        );
 
         const response = await fetch(
-          `/api/nexrad/frames?site=${encodeURIComponent(site.radarId)}&product=${encodeURIComponent(product)}`,
-          { cache: 'no-store' }
+          `/api/nexrad/frames?site=${encodeURIComponent(
+            site.radarId
+          )}&product=${encodeURIComponent(product)}`,
+          {
+            cache: 'no-store',
+          }
         );
 
         const data = await response.json();
+
         if (cancelled) return;
 
-        if (!response.ok) throw new Error(data.error || 'NEXRAD unavailable');
+        if (!response.ok) {
+          throw new Error(
+            data.error || 'NEXRAD unavailable'
+          );
+        }
 
         const url =
           data.frames && data.frames.length > 0
@@ -364,28 +525,52 @@ export function RadarMap({
             : data.tileUrl;
 
         const liveMap = mapRef.current;
+
         if (url && liveMap) {
           installOrUpdateRadarLayer(liveMap, url);
+
           setRadarStatus(
             `NEXRAD ${site.radarId} · ${productLabel} · latest available Level III scan`
+          );
+        } else {
+          setRadarStatus(
+            `No radar frames available for ${site.radarId}`
           );
         }
       } catch (err) {
         console.error('NEXRAD load failed:', err);
+
         if (!cancelled) {
-          setRadarStatus(`NEXRAD ${site.radarId} radar unavailable`);
+          setRadarStatus(
+            `NEXRAD ${site.radarId} radar unavailable`
+          );
         }
       }
     }
 
     void loadLatest();
-    const timer = window.setInterval(() => void loadLatest(), 5 * 60 * 1000);
+
+    const timer = window.setInterval(
+      () => void loadLatest(),
+      5 * 60 * 1000
+    );
 
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [mapReady, site.radarId, product, frameUrl, installOrUpdateRadarLayer, productLabel]);
+  }, [
+    mapReady,
+    site.radarId,
+    product,
+    frameUrl,
+    installOrUpdateRadarLayer,
+    productLabel,
+  ]);
+
+  // ----------------------------------------
+  // RENDER
+  // ----------------------------------------
 
   return (
     <div className="radar-map-root relative h-full w-full">
@@ -394,16 +579,20 @@ export function RadarMap({
         className="radar-map-container absolute inset-0"
         aria-label={`${mapType} map with NEXRAD ${productLabel} from ${site.radarId}`}
       />
+
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-md bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-200 backdrop-blur">
         <span
           className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${
-            radarStatus.includes('latest') || radarStatus.includes('LIVE')
+            radarStatus.includes('latest') ||
+            radarStatus.includes('LIVE')
               ? 'bg-emerald-400'
               : 'bg-amber-400'
           }`}
         />
+
         {radarStatus}
       </div>
     </div>
   );
 }
+
