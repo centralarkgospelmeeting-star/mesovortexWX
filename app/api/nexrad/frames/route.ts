@@ -2,7 +2,10 @@ import { NEXRAD_PRODUCT_CODES, RADAR_SITES } from '../../../../lib/radar-config'
 
 export const dynamic = 'force-dynamic';
 
-const IEM_TILE_BASE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
+// IEM has two useful endpoints:
+// 1. Single-site ridge tiles
+// 2. CONUS composite (very reliable)
+const IEM_TILE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -14,18 +17,30 @@ export async function GET(request: Request) {
     RADAR_SITES.find((s) => s.radarId === siteId.replace(/^K/, '')) ||
     RADAR_SITES[0];
 
-  const productCode = NEXRAD_PRODUCT_CODES[productKey] || 'N0Q';
+  // Prefer modern product codes. N0B is the current 8-bit base reflectivity.
+  const productMap: Record<string, string> = {
+    ref: 'N0B',   // was N0Q — N0B is more current on IEM
+    vel: 'N0U',
+    srvel: 'N0S',
+    cc: 'N0C',
+    zdr: 'N0X',
+    kdp: 'N0K',
+  };
 
-  // Always provide a solid "latest" frame first
-  const latestUrl = `${IEM_TILE_BASE}/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
+  const productCode = productMap[productKey] || NEXRAD_PRODUCT_CODES[productKey] || 'N0B';
 
-  // Generate a simple loop of approximate past frames (every 5 min)
+  // 1. Single-site latest (primary)
+  const singleSiteLatest = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
+
+  // 2. CONUS composite fallback (almost always has data)
+  const compositeLatest = `${IEM_TILE}/nexrad-n0q-900913/{z}/{x}/{y}.png`;
+
+  // Simple loop frames (single-site)
   const now = new Date();
   const frames: { time: string; label: string; tileUrl: string; ageMinutes: number }[] = [];
 
-  for (let i = 12; i >= 1; i--) {
+  for (let i = 10; i >= 1; i--) {
     const date = new Date(now.getTime() - i * 5 * 60 * 1000);
-    // Round to nearest 5 minutes
     date.setUTCMinutes(Math.floor(date.getUTCMinutes() / 5) * 5, 0, 0);
 
     const y = date.getUTCFullYear();
@@ -34,22 +49,21 @@ export async function GET(request: Request) {
     const h = String(date.getUTCHours()).padStart(2, '0');
     const min = String(date.getUTCMinutes()).padStart(2, '0');
     const stamp = `${y}${m}${d}${h}${min}`;
-
     const ageMinutes = Math.round((now.getTime() - date.getTime()) / 60000);
 
     frames.push({
       time: date.toISOString(),
       label: `-${ageMinutes}m`,
-      tileUrl: `${IEM_TILE_BASE}/ridge::${site.radarId}-${productCode}-${stamp}/{z}/{x}/{y}.png`,
+      tileUrl: `${IEM_TILE}/ridge::${site.radarId}-${productCode}-${stamp}/{z}/{x}/{y}.png`,
       ageMinutes,
     });
   }
 
-  // Put LIVE at the end
+  // LIVE frame at the end — try single-site first
   frames.push({
     time: now.toISOString(),
     label: 'LIVE',
-    tileUrl: latestUrl,
+    tileUrl: singleSiteLatest,
     ageMinutes: 0,
   });
 
@@ -60,11 +74,11 @@ export async function GET(request: Request) {
       siteId: site.id,
       product: productCode,
       productKey,
-      scheme: 'tms',
+      scheme: 'xyz',          // try xyz first — many IEM layers work better this way
       frames,
       count: frames.length,
-      // also expose a direct latest for easy debugging
-      latest: latestUrl,
+      latest: singleSiteLatest,
+      composite: compositeLatest, // backup the map can use
     },
     {
       headers: {
