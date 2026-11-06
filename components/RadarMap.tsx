@@ -366,7 +366,6 @@ export function RadarMap({
       if (!res.ok) return;
       const data = await res.json();
 
-      // Transform properties so temperature is rounded and formatted in °F
       const features = (data.features || []).map((f: any) => {
         const c = f.properties?.temp;
         const fahrenheit = c != null ? Math.round((c * 9) / 5 + 32) : null;
@@ -380,7 +379,11 @@ export function RadarMap({
         };
       });
 
-      const processedGeoJSON = { type: 'FeatureCollection', features };
+      // Explicitly typed as GeoJSON.FeatureCollection to satisfy TypeScript compiler
+      const processedGeoJSON: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection' as const,
+        features,
+      };
 
       if (!map.getSource(METAR_SOURCE_ID)) {
         map.addSource(METAR_SOURCE_ID, {
@@ -388,7 +391,6 @@ export function RadarMap({
           data: processedGeoJSON,
         });
 
-        // Small dot colored by flight rules (VFR: green, MVFR: blue, IFR: red, LIFR: magenta)
         map.addLayer({
           id: METAR_CIRCLE_LAYER_ID,
           type: 'circle',
@@ -412,7 +414,6 @@ export function RadarMap({
           },
         });
 
-        // Temperature label right beside the dot
         map.addLayer({
           id: METAR_LABEL_LAYER_ID,
           type: 'symbol',
@@ -432,7 +433,6 @@ export function RadarMap({
           },
         });
 
-        // METAR Click Popup
         map.on('click', METAR_CIRCLE_LAYER_ID, (e) => {
           const props = e.features?.[0]?.properties;
           if (!props) return;
@@ -534,7 +534,7 @@ export function RadarMap({
       }));
 
       const geojson: GeoJSON.FeatureCollection = {
-        type: 'FeatureCollection',
+        type: 'FeatureCollection' as const,
         features,
       };
 
@@ -639,7 +639,7 @@ export function RadarMap({
       map.addSource(SITES_SOURCE_ID, {
         type: 'geojson',
         data: {
-          type: 'FeatureCollection',
+          type: 'FeatureCollection' as const,
           features,
         },
       });
@@ -844,7 +844,7 @@ export function RadarMap({
       }));
 
       source.setData({
-        type: 'FeatureCollection',
+        type: 'FeatureCollection' as const,
         features,
       });
     }
