@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { RadarMap } from '../components/RadarMap';
 import { WeatherAssistant } from '../components/WeatherAssistant';
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
+import { EmergencyAlertTone } from '../components/EmergencyAlertTone';
 
 type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
 type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
@@ -396,6 +397,7 @@ export default function MesoVortexWX() {
                 alerts: [],
               }}
               onClose={() => setShowAssistant(false)}
+              <EmergencyAlertTone />
             />
           </div>
         </div>
