@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
-import { RadarMap, SpotterPin } from '../components/RadarMap';
+import { RadarMap, SpotterPin, PaletteType } from '../components/RadarMap';
 import { WeatherAssistant } from '../components/WeatherAssistant';
 import { EmergencyAlertTone } from '../components/EmergencyAlertTone';
 import { SynchronizedQuadView } from '../components/SynchronizedQuadView';
@@ -24,10 +24,13 @@ export default function MesoVortexWX() {
   const [product, setProduct] = useState<RadarProduct>('ref');
   const [radarSite, setRadarSite] = useState('KLZK');
   const [mapType, setMapType] = useState<MapType>('street');
+  const [palette, setPalette] = useState<PaletteType>('nws');
   const [showAssistant, setShowAssistant] = useState(false);
   const [showQuad, setShowQuad] = useState(false);
   const [showLightning, setShowLightning] = useState(true);
   const [showMetars, setShowMetars] = useState(false);
+  const [showLSR, setShowLSR] = useState(true);
+  const [showWatches, setShowWatches] = useState(true);
   const [cardExpanded, setCardExpanded] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -139,10 +142,13 @@ export default function MesoVortexWX() {
             product={product}
             radarSite={radarSite}
             mapType={mapType}
+            palette={palette}
             frameUrl={currentFrame?.tileUrl ?? null}
             frameLabel={currentFrame?.label}
             showLightning={showLightning}
             showMetars={showMetars}
+            showLSR={showLSR}
+            showWatches={showWatches}
             spotterReports={spotterReports}
             onMapClickCoordinates={(coords) => setSpotterCoords(coords)}
           />
@@ -153,8 +159,11 @@ export default function MesoVortexWX() {
               product={product2}
               radarSite={radarSite}
               mapType={mapType}
+              palette={palette}
               showLightning={showLightning}
               showMetars={showMetars}
+              showLSR={showLSR}
+              showWatches={showWatches}
             />
           </div>
         )}
@@ -206,7 +215,7 @@ export default function MesoVortexWX() {
         <button
           onClick={() => setSettingsOpen((v) => !v)}
           className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-slate-950/80 text-slate-200 shadow-lg backdrop-blur hover:bg-slate-900"
-          title="Customizations"
+          title="Customizations & Color Palettes"
         >
           ⚙
         </button>
@@ -246,7 +255,6 @@ export default function MesoVortexWX() {
         >
           ⚡
         </button>
-        {/* NEW: METAR Stations Toggle Button */}
         <button
           onClick={() => setShowMetars((v) => !v)}
           className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
@@ -254,23 +262,71 @@ export default function MesoVortexWX() {
               ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.3)]'
               : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
           }`}
-          title="Toggle Surface METAR Weather Stations"
+          title="Toggle Surface METAR Stations"
         >
           🌡️
         </button>
+        {/* NEW: Live Storm Reports (LSR) Button */}
+        <button
+          onClick={() => setShowLSR((v) => !v)}
+          className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
+            showLSR
+              ? 'border-sky-400/50 bg-sky-500/20 text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.3)]'
+              : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
+          }`}
+          title="Toggle NWS Local Storm Reports (LSR)"
+        >
+          🌪️
+        </button>
+        {/* NEW: Live Watch Boxes Button */}
+        <button
+          onClick={() => setShowWatches((v) => !v)}
+          className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
+            showWatches
+              ? 'border-rose-400/50 bg-rose-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.3)]'
+              : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
+          }`}
+          title="Toggle Tornado & Severe Watch Boxes"
+        >
+          🛡️
+        </button>
       </div>
 
-      {/* SETTINGS PANEL */}
+      {/* SETTINGS PANEL (With DG Noah / WxTools Palette Switcher) */}
       {settingsOpen && (
-        <div className="absolute left-16 top-20 z-30 w-64 rounded-2xl border border-white/10 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-xl">
+        <div className="absolute left-16 top-20 z-30 w-72 rounded-2xl border border-white/10 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-xl">
           <div className="mb-3 flex items-center justify-between">
-            <span className="text-sm font-semibold">Customizations</span>
-            <button onClick={() => setSettingsOpen(false)} className="text-slate-400 hover:text-white">
-              ✕
-            </button>
+            <span className="text-sm font-semibold">Customizations & Palettes</span>
+            <button onClick={() => setSettingsOpen(false)} className="text-slate-400 hover:text-white">✕</button>
           </div>
 
           <div className="space-y-4 text-xs">
+            {/* Color Palette Switcher */}
+            <div>
+              <div className="mb-1.5 font-semibold text-cyan-300">Radar Color Palette (WxTools / DG Noah)</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { key: 'nws', label: 'NWS Classic' },
+                  { key: 'radarscope', label: 'RadarScope / Baron' },
+                  { key: 'cod', label: 'COD Pastels' },
+                  { key: 'smooth', label: 'DG Noah Smooth' },
+                  { key: 'couplet', label: 'Couplet Hunter' },
+                ].map((p) => (
+                  <button
+                    key={p.key}
+                    onClick={() => setPalette(p.key as PaletteType)}
+                    className={`rounded-lg py-1.5 px-2 text-left text-[11px] font-semibold transition ${
+                      palette === p.key
+                        ? 'bg-cyan-600 text-white shadow'
+                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div>
               <div className="mb-1.5 flex justify-between text-slate-400">
                 <span>Radar Opacity</span>
@@ -286,36 +342,6 @@ export default function MesoVortexWX() {
                 className="w-full accent-cyan-500"
               />
             </div>
-
-            <label className="flex items-center justify-between">
-              <span className="text-slate-300">Range Rings</span>
-              <input
-                type="checkbox"
-                checked={showRangeRings}
-                onChange={(e) => setShowRangeRings(e.target.checked)}
-                className="accent-cyan-500"
-              />
-            </label>
-
-            <label className="flex items-center justify-between">
-              <span className="text-slate-300">Site Labels</span>
-              <input
-                type="checkbox"
-                checked={showSiteLabels}
-                onChange={(e) => setShowSiteLabels(e.target.checked)}
-                className="accent-cyan-500"
-              />
-            </label>
-
-            <label className="flex items-center justify-between">
-              <span className="text-slate-300">Smoothing</span>
-              <input
-                type="checkbox"
-                checked={smoothing}
-                onChange={(e) => setSmoothing(e.target.checked)}
-                className="accent-cyan-500"
-              />
-            </label>
 
             <div>
               <div className="mb-1.5 text-slate-400">Basemap</div>
