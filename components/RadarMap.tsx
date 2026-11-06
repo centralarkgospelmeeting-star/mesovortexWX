@@ -37,6 +37,13 @@ type RadarMapProps = {
   onMapClickCoordinates?: (coords: [number, number]) => void;
 };
 
+// -------------------------------------------------------------
+// YOUR MAPBOX & MAPTILER CREDENTIALS
+// -------------------------------------------------------------
+const MAPBOX_TOKEN = 'pk.eyJ1IjoiY2VudHJhbGFya2dvc3BlbG1lZXRpbmctc3RhciIsImEiOiJjbXc1ZGZjNzkwN2hxMzBva2dmcWpveWdzIn0.hlPLiOdDno_E9_1aTxTqXA';
+const MAPBOX_STYLE_ID = 'centralarkgospelmeeting-star/cmw5diwpt01zo01qs5ftc22ma';
+const MAPTILER_KEY = '4JiuLmexmU5wIex7AETD';
+
 const RADAR_SOURCE_ID = 'mesovortex-nexrad';
 const RADAR_LAYER_ID = 'mesovortex-nexrad-layer';
 
@@ -66,29 +73,54 @@ const SPC_OUTLOOK_LINE_ID = 'spc-outlooks-line';
 const SPOTTER_SOURCE_ID = 'spotter-pins';
 const SPOTTER_LAYER_ID = 'spotter-pins-circle';
 
-// CartoDB Dark Matter (WeatherWise Pro / RadarScope Style)
-function makeStyle(mapType: MapType): StyleSpecification {
+// -------------------------------------------------------------
+// RESOLVE MAPBOX FIRST, THEN SATELLITE
+// -------------------------------------------------------------
+function makeMapStyle(mapType: MapType): StyleSpecification {
   const isSatellite = mapType === 'satellite' || mapType === 'globe';
 
-  const tileUrl = isSatellite
-    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-    : 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+  if (isSatellite) {
+    // 2. MapTiler Satellite Hybrid
+    return {
+      version: 8,
+      sources: {
+        satelliteBase: {
+          type: 'raster',
+          tiles: [
+            `https://api.maptiler.com/maps/hybrid-v4/{z}/{x}/{y}.jpg?key=${MAPTILER_KEY}`,
+          ],
+          tileSize: 512,
+          attribution: '© MapTiler © OpenStreetMap',
+        },
+      },
+      layers: [
+        {
+          id: 'satellite-layer',
+          type: 'raster',
+          source: 'satelliteBase',
+        },
+      ],
+    };
+  }
 
+  // 1. Mapbox Custom Style First (cmw5diwpt01zo01qs5ftc22ma)
   return {
     version: 8,
     sources: {
-      basemap: {
+      mapboxBase: {
         type: 'raster',
-        tiles: [tileUrl],
-        tileSize: 256,
-        attribution: isSatellite ? '© Esri' : '© CARTO © OpenStreetMap',
+        tiles: [
+          `https://api.mapbox.com/styles/v1/${MAPBOX_STYLE_ID}/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`,
+        ],
+        tileSize: 512,
+        attribution: '© Mapbox © OpenStreetMap',
       },
     },
     layers: [
       {
-        id: 'basemap-layer',
+        id: 'mapbox-layer',
         type: 'raster',
-        source: 'basemap',
+        source: 'mapboxBase',
       },
     ],
   };
@@ -124,6 +156,17 @@ export function RadarMap({
 
   const allSpotters = [...spotterReports, ...localSpotters];
 
+  const safeAddLayer = (map: MapLibreMap, layer: any, beforeId?: string) => {
+    try {
+      if (!map.getLayer(layer.id)) {
+        const validBefore = beforeId && map.getLayer(beforeId) ? beforeId : undefined;
+        map.addLayer(layer, validBefore);
+      }
+    } catch (e) {
+      console.warn(`Layer notice (${layer.id}):`, e);
+    }
+  };
+
   // 1. SPC Convective Outlooks
   const installSPCOutlooks = useCallback((map: MapLibreMap) => {
     fetch('/api/spc/outlooks')
@@ -132,7 +175,7 @@ export function RadarMap({
         if (!map.getSource(SPC_OUTLOOK_SOURCE_ID)) {
           map.addSource(SPC_OUTLOOK_SOURCE_ID, { type: 'geojson', data });
 
-          map.addLayer({
+          safeAddLayer(map, {
             id: SPC_OUTLOOK_FILL_ID,
             type: 'fill',
             source: SPC_OUTLOOK_SOURCE_ID,
@@ -152,7 +195,7 @@ export function RadarMap({
             },
           });
 
-          map.addLayer({
+          safeAddLayer(map, {
             id: SPC_OUTLOOK_LINE_ID,
             type: 'line',
             source: SPC_OUTLOOK_SOURCE_ID,
@@ -174,7 +217,7 @@ export function RadarMap({
           });
         }
       })
-      .catch((err) => console.warn('SPC load notice:', err));
+      .catch((err) => console.warn('SPC notice:', err));
   }, []);
 
   // 2. Watch Boxes
@@ -185,7 +228,7 @@ export function RadarMap({
         if (!map.getSource(WATCHES_SOURCE_ID)) {
           map.addSource(WATCHES_SOURCE_ID, { type: 'geojson', data: data as any });
 
-          map.addLayer({
+          safeAddLayer(map, {
             id: WATCHES_FILL_LAYER_ID,
             type: 'fill',
             source: WATCHES_SOURCE_ID,
@@ -202,7 +245,7 @@ export function RadarMap({
             layout: { visibility: showWatches ? 'visible' : 'none' },
           });
 
-          map.addLayer({
+          safeAddLayer(map, {
             id: WATCHES_LINE_LAYER_ID,
             type: 'line',
             source: WATCHES_SOURCE_ID,
@@ -224,7 +267,7 @@ export function RadarMap({
       .catch((err) => console.warn('Watches notice:', err));
   }, [showWatches]);
 
-  // 3. NWS Local Storm Reports (LSR)
+  // 3. Local Storm Reports (LSR)
   const installLSRLayer = useCallback((map: MapLibreMap) => {
     fetch('/api/lsr')
       .then((res) => res.json())
@@ -253,7 +296,7 @@ export function RadarMap({
             data: { type: 'FeatureCollection', features } as any,
           });
 
-          map.addLayer({
+          safeAddLayer(map, {
             id: LSR_CIRCLE_LAYER_ID,
             type: 'circle',
             source: LSR_SOURCE_ID,
@@ -274,7 +317,7 @@ export function RadarMap({
             layout: { visibility: showLSR ? 'visible' : 'none' },
           });
 
-          map.addLayer({
+          safeAddLayer(map, {
             id: LSR_LABEL_LAYER_ID,
             type: 'symbol',
             source: LSR_SOURCE_ID,
@@ -308,7 +351,7 @@ export function RadarMap({
         } else {
           map.addSource(NWS_WARNINGS_SOURCE_ID, { type: 'geojson', data });
 
-          map.addLayer({
+          safeAddLayer(map, {
             id: NWS_WARNINGS_FILL_ID,
             type: 'fill',
             source: NWS_WARNINGS_SOURCE_ID,
@@ -326,7 +369,7 @@ export function RadarMap({
             },
           });
 
-          map.addLayer({
+          safeAddLayer(map, {
             id: NWS_WARNINGS_LINE_ID,
             type: 'line',
             source: NWS_WARNINGS_SOURCE_ID,
@@ -359,7 +402,7 @@ export function RadarMap({
       attribution: 'NOAA GOES GLM Lightning © UW-SSEC RealEarth',
     });
 
-    map.addLayer({
+    safeAddLayer(map, {
       id: LIGHTNING_LAYER_ID,
       type: 'raster',
       source: LIGHTNING_SOURCE_ID,
@@ -391,7 +434,7 @@ export function RadarMap({
             data: { type: 'FeatureCollection', features } as any,
           });
 
-          map.addLayer({
+          safeAddLayer(map, {
             id: METAR_CIRCLE_LAYER_ID,
             type: 'circle',
             source: METAR_SOURCE_ID,
@@ -412,7 +455,7 @@ export function RadarMap({
             layout: { visibility: showMetars ? 'visible' : 'none' },
           });
 
-          map.addLayer({
+          safeAddLayer(map, {
             id: METAR_LABEL_LAYER_ID,
             type: 'symbol',
             source: METAR_SOURCE_ID,
@@ -439,52 +482,62 @@ export function RadarMap({
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
 
-      if (map.getLayer(RADAR_LAYER_ID)) map.removeLayer(RADAR_LAYER_ID);
-      if (map.getSource(RADAR_SOURCE_ID)) map.removeSource(RADAR_SOURCE_ID);
+      try {
+        if (map.getLayer(RADAR_LAYER_ID)) map.removeLayer(RADAR_LAYER_ID);
+        if (map.getSource(RADAR_SOURCE_ID)) map.removeSource(RADAR_SOURCE_ID);
 
-      map.addSource(RADAR_SOURCE_ID, {
-        type: 'raster',
-        tiles: [tileUrl],
-        tileSize: 256,
-        scheme: 'xyz',
-        attribution: 'NEXRAD Level III via Iowa Environmental Mesonet',
-      });
+        map.addSource(RADAR_SOURCE_ID, {
+          type: 'raster',
+          tiles: [tileUrl],
+          tileSize: 256,
+          scheme: 'xyz',
+          attribution: 'NEXRAD Level III via IEM',
+        });
 
-      let contrast = 0;
-      let saturation = 0;
+        let contrast = 0;
+        let saturation = 0;
 
-      if (palette === 'radarscope') {
-        contrast = 0.25;
-        saturation = 0.35;
-      } else if (palette === 'cod') {
-        contrast = -0.1;
-        saturation = 0.2;
-      } else if (palette === 'smooth') {
-        contrast = 0.1;
-        saturation = 0.15;
-      } else if (palette === 'couplet') {
-        contrast = 0.4;
-        saturation = 0.5;
+        if (palette === 'radarscope') {
+          contrast = 0.25;
+          saturation = 0.35;
+        } else if (palette === 'cod') {
+          contrast = -0.1;
+          saturation = 0.2;
+        } else if (palette === 'smooth') {
+          contrast = 0.1;
+          saturation = 0.15;
+        } else if (palette === 'couplet') {
+          contrast = 0.4;
+          saturation = 0.5;
+        }
+
+        const beforeId = map.getLayer(LIGHTNING_LAYER_ID)
+          ? LIGHTNING_LAYER_ID
+          : map.getLayer(NWS_WARNINGS_FILL_ID)
+          ? NWS_WARNINGS_FILL_ID
+          : undefined;
+
+        safeAddLayer(map, {
+          id: RADAR_LAYER_ID,
+          type: 'raster',
+          source: RADAR_SOURCE_ID,
+          paint: {
+            'raster-opacity': 0.88,
+            'raster-contrast': contrast,
+            'raster-saturation': saturation,
+            'raster-fade-duration': 0,
+          },
+        }, beforeId);
+
+        currentTileUrlRef.current = tileUrl;
+      } catch (err) {
+        console.warn('Radar layer notice:', err);
       }
-
-      map.addLayer({
-        id: RADAR_LAYER_ID,
-        type: 'raster',
-        source: RADAR_SOURCE_ID,
-        paint: {
-          'raster-opacity': 0.88,
-          'raster-contrast': contrast,
-          'raster-saturation': saturation,
-          'raster-fade-duration': 0,
-        },
-      });
-
-      currentTileUrlRef.current = tileUrl;
     },
     [palette]
   );
 
-  // 8. ON-MAP WEATHERWISE RADAR TOWER PILLS
+  // 8. On-Map WeatherWise Radar Tower Pills
   const renderWeatherWiseRadarPills = useCallback(
     (map: MapLibreMap) => {
       siteMarkersRef.current.forEach((m) => m.remove());
@@ -531,7 +584,7 @@ export function RadarMap({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: makeStyle(mapType),
+      style: makeMapStyle(mapType),
       center: [site.lon, site.lat],
       zoom: 7.2,
       attributionControl: { compact: true },
@@ -539,14 +592,13 @@ export function RadarMap({
 
     mapRef.current = map;
 
-    // Trigger immediate resize so map fills container
     setTimeout(() => map.resize(), 100);
+    setTimeout(() => map.resize(), 400);
 
     map.on('load', () => {
       setMapReady(true);
       map.resize();
 
-      // Install all feature layers in parallel
       installSPCOutlooks(map);
       installWatchesLayer(map);
       installOrUpdateNWSWarnings(map);
@@ -667,10 +719,10 @@ export function RadarMap({
   }, [mapReady, site.radarId, product, frameUrl, installOrUpdateRadarLayer]);
 
   return (
-    <div style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'hidden' }}>
+    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}>
       <div
         ref={containerRef}
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
       />
     </div>
   );
