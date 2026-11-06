@@ -27,6 +27,8 @@ export default function MesoVortexWX() {
   const [palette, setPalette] = useState<PaletteType>('nws');
   const [showAssistant, setShowAssistant] = useState(false);
   const [showQuad, setShowQuad] = useState(false);
+
+  // Layer Toggles
   const [showLightning, setShowLightning] = useState(true);
   const [showMetars, setShowMetars] = useState(false);
   const [showLSR, setShowLSR] = useState(true);
@@ -40,9 +42,6 @@ export default function MesoVortexWX() {
 
   // Customizations
   const [radarOpacity, setRadarOpacity] = useState(0.85);
-  const [showRangeRings, setShowRangeRings] = useState(true);
-  const [showSiteLabels, setShowSiteLabels] = useState(true);
-  const [smoothing, setSmoothing] = useState(false);
   const [dualPane, setDualPane] = useState(false);
   const [product2, setProduct2] = useState<RadarProduct>('vel');
 
@@ -57,7 +56,7 @@ export default function MesoVortexWX() {
   const productInfo = RADAR_PRODUCTS.find((p) => p.key === product);
   const currentFrame = frames[frameIndex] || null;
 
-  // Load frames
+  // Load LIVE frames
   const loadFrames = useCallback(async () => {
     setLoopLoading(true);
     try {
@@ -84,7 +83,7 @@ export default function MesoVortexWX() {
     void loadFrames();
   }, [loadFrames]);
 
-  // Playback
+  // Playback timer
   useEffect(() => {
     if (playTimerRef.current) {
       window.clearInterval(playTimerRef.current);
@@ -94,7 +93,7 @@ export default function MesoVortexWX() {
 
     playTimerRef.current = window.setInterval(() => {
       setFrameIndex((prev) => (prev + 1 >= frames.length ? 0 : prev + 1));
-    }, 700);
+    }, 650);
 
     return () => {
       if (playTimerRef.current) window.clearInterval(playTimerRef.current);
@@ -173,14 +172,7 @@ export default function MesoVortexWX() {
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-30 flex justify-center pt-3">
         <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/10 bg-slate-950/85 px-2 py-1.5 shadow-2xl backdrop-blur-xl">
           <div className="flex items-center gap-2 pl-1 pr-3">
-            <Image
-              src="/logo.png"
-              alt="MesoVortex Wx"
-              width={28}
-              height={28}
-              className="rounded-full"
-              priority
-            />
+            <Image src="/logo.png" alt="MesoVortex Wx" width={28} height={28} className="rounded-full" priority />
             <span className="hidden text-sm font-bold tracking-tight sm:inline">
               Meso<span className="text-cyan-400">Vortex</span>
             </span>
@@ -192,9 +184,7 @@ export default function MesoVortexWX() {
             <button
               key={tab}
               className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                tab === 'Radar'
-                  ? 'bg-cyan-600 text-white shadow'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                tab === 'Radar' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:bg-white/5 hover:text-white'
               }`}
             >
               {tab}
@@ -229,9 +219,7 @@ export default function MesoVortexWX() {
         <button
           onClick={() => setDualPane((v) => !v)}
           className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur ${
-            dualPane
-              ? 'border-cyan-500/50 bg-cyan-600/30 text-cyan-200'
-              : 'border-white/10 bg-slate-950/80 text-slate-200 hover:bg-slate-900'
+            dualPane ? 'border-cyan-500/50 bg-cyan-600/30 text-cyan-200' : 'border-white/10 bg-slate-950/80 text-slate-200 hover:bg-slate-900'
           }`}
           title="Dual pane"
         >
@@ -247,9 +235,7 @@ export default function MesoVortexWX() {
         <button
           onClick={() => setShowLightning((v) => !v)}
           className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
-            showLightning
-              ? 'border-amber-400/50 bg-amber-500/20 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.3)]'
-              : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
+            showLightning ? 'border-amber-400/50 bg-amber-500/20 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.3)]' : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
           }`}
           title="Toggle Live Lightning (GOES GLM)"
         >
@@ -258,41 +244,33 @@ export default function MesoVortexWX() {
         <button
           onClick={() => setShowMetars((v) => !v)}
           className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
-            showMetars
-              ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.3)]'
-              : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
+            showMetars ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.3)]' : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
           }`}
           title="Toggle Surface METAR Stations"
         >
           🌡️
         </button>
-        {/* NEW: Live Storm Reports (LSR) Button */}
         <button
           onClick={() => setShowLSR((v) => !v)}
           className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
-            showLSR
-              ? 'border-sky-400/50 bg-sky-500/20 text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.3)]'
-              : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
+            showLSR ? 'border-sky-400/50 bg-sky-500/20 text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.3)]' : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
           }`}
           title="Toggle NWS Local Storm Reports (LSR)"
         >
           🌪️
         </button>
-        {/* NEW: Live Watch Boxes Button */}
         <button
           onClick={() => setShowWatches((v) => !v)}
           className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur transition ${
-            showWatches
-              ? 'border-rose-400/50 bg-rose-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.3)]'
-              : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
+            showWatches ? 'border-rose-400/50 bg-rose-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.3)]' : 'border-white/10 bg-slate-950/80 text-slate-400 hover:bg-slate-900 hover:text-white'
           }`}
-          title="Toggle Tornado & Severe Watch Boxes"
+          title="Toggle Watch Boxes"
         >
           🛡️
         </button>
       </div>
 
-      {/* SETTINGS PANEL (With DG Noah / WxTools Palette Switcher) */}
+      {/* SETTINGS PANEL (Custom Color Palettes) */}
       {settingsOpen && (
         <div className="absolute left-16 top-20 z-30 w-72 rounded-2xl border border-white/10 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-xl">
           <div className="mb-3 flex items-center justify-between">
@@ -301,7 +279,6 @@ export default function MesoVortexWX() {
           </div>
 
           <div className="space-y-4 text-xs">
-            {/* Color Palette Switcher */}
             <div>
               <div className="mb-1.5 font-semibold text-cyan-300">Radar Color Palette (WxTools / DG Noah)</div>
               <div className="grid grid-cols-2 gap-1.5">
@@ -316,9 +293,7 @@ export default function MesoVortexWX() {
                     key={p.key}
                     onClick={() => setPalette(p.key as PaletteType)}
                     className={`rounded-lg py-1.5 px-2 text-left text-[11px] font-semibold transition ${
-                      palette === p.key
-                        ? 'bg-cyan-600 text-white shadow'
-                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                      palette === p.key ? 'bg-cyan-600 text-white shadow' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
                     {p.label}
@@ -341,25 +316,6 @@ export default function MesoVortexWX() {
                 onChange={(e) => setRadarOpacity(Number(e.target.value))}
                 className="w-full accent-cyan-500"
               />
-            </div>
-
-            <div>
-              <div className="mb-1.5 text-slate-400">Basemap</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {(['street', 'satellite', 'terrain', 'globe'] as MapType[]).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setMapType(t)}
-                    className={`rounded-lg py-1.5 capitalize ${
-                      mapType === t
-                        ? 'bg-cyan-600 text-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
         </div>
@@ -417,9 +373,7 @@ export default function MesoVortexWX() {
                 className="mb-2.5 w-full rounded-lg border border-white/10 bg-slate-900 px-2.5 py-1.5 text-xs text-white focus:border-cyan-500 focus:outline-none"
               >
                 {RADAR_SITES.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
 
@@ -431,15 +385,11 @@ export default function MesoVortexWX() {
                       key={p.key}
                       onClick={() => setProduct(p.key as RadarProduct)}
                       className={`rounded-xl px-2 py-2.5 text-center transition ${
-                        active
-                          ? 'bg-cyan-600/30 ring-1 ring-cyan-500 text-cyan-100'
-                          : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800'
+                        active ? 'bg-cyan-600/30 ring-1 ring-cyan-500 text-cyan-100' : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800'
                       }`}
                     >
                       <div className="text-[11px] font-bold">{p.short}</div>
-                      <div className="mt-0.5 text-[9px] leading-tight opacity-70">
-                        {p.label.split(' ')[0]}
-                      </div>
+                      <div className="mt-0.5 text-[9px] leading-tight opacity-70">{p.label.split(' ')[0]}</div>
                     </button>
                   );
                 })}
@@ -475,11 +425,7 @@ export default function MesoVortexWX() {
         <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
           <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
             <WeatherAssistant
-              context={{
-                site: radarSite,
-                product: productInfo?.label,
-                alerts: [],
-              }}
+              context={{ site: radarSite, product: productInfo?.label, alerts: [] }}
               onClose={() => setShowAssistant(false)}
             />
           </div>
@@ -487,14 +433,9 @@ export default function MesoVortexWX() {
       )}
 
       {/* Quad Synchro View Modal */}
-      {showQuad && (
-        <SynchronizedQuadView
-          radarSite={radarSite}
-          onClose={() => setShowQuad(false)}
-        />
-      )}
+      {showQuad && <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowQuad(false)} />}
 
-      {/* Spotter Observation Submission Modal */}
+      {/* Spotter Observation Modal */}
       {spotterCoords && (
         <SpotterReportModal
           currentCoords={spotterCoords}
