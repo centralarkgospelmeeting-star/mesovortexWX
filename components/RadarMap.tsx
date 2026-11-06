@@ -202,7 +202,7 @@ export function RadarMap({
       type: 'raster',
       tiles: [tileUrl],
       tileSize: 256,
-      scheme: 'tms',
+      scheme: 'xyz
       attribution: 'NEXRAD Level III via Iowa Environmental Mesonet',
     });
 
@@ -214,7 +214,7 @@ export function RadarMap({
         type: 'raster',
         source: RADAR_SOURCE_ID,
         paint: {
-          'raster-opacity': 0.85,
+          'raster-opacity': 0.9,
           'raster-fade-duration': 0,
         },
       },
