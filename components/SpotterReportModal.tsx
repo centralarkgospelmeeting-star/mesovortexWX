@@ -59,7 +59,7 @@ export function SpotterReportModal({ currentCoords, onClose, onSubmit }: Props) 
               <option value="Tornado">🌪️ Tornado on Ground</option>
               <option value="Wall Cloud">☁️ Rotating Wall Cloud / Funnel</option>
               <option value="Large Hail">🧊 Severe Hail</option>
-              <option value="Damaging Wind">💨 Damaging Wind (>60 mph)</option>
+              <option value="Damaging Wind">💨 Damaging Wind (&gt;60 mph)</option>
               <option value="Flash Flood">🌊 Flash Flooding</option>
             </select>
           </div>
@@ -92,7 +92,7 @@ export function SpotterReportModal({ currentCoords, onClose, onSubmit }: Props) 
           </div>
 
           <div>
-            <label className="mb-1 block font-semibold text-slate-300">Field Notes & Damage Details</label>
+            <label className="mb-1 block font-semibold text-slate-300">Field Notes &amp; Damage Details</label>
             <textarea
               rows={3}
               placeholder="Visible condensation funnel, power flashes, tree limb damage..."
