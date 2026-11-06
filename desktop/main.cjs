@@ -1,6 +1,11 @@
 const { app, BrowserWindow, dialog, shell, utilityProcess } = require('electron');
 const path = require('node:path');
 
+// 1. Force the computer's graphics card to handle radar loops at 60-120 FPS
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-zero-copy');
+
 const PORT = '3217';
 const APP_URL = `http://127.0.0.1:${PORT}`;
 let serverProcess;
@@ -26,7 +31,7 @@ async function waitForServer() {
       const response = await fetch(APP_URL);
       if (response.ok) return;
     } catch {
-      // The bundled Next.js server is still starting.
+      // Server is still starting up
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
@@ -62,7 +67,7 @@ async function createWindow() {
   } catch (error) {
     dialog.showErrorBox(
       'MesoVortexWX could not start',
-      `${error.message}\n\nPlease send this full message to support. It contains the startup diagnostic.`
+      `${error.message}\n\nPlease check startup diagnostics.`
     );
     app.quit();
     return;
