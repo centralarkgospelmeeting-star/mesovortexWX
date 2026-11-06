@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -7,7 +6,18 @@ import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { RADAR_SITES } from '../lib/radar-config';
 
-type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
+export type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
+
+export type SpotterPin = {
+  id: string;
+  hazardType: string;
+  description: string;
+  hailSize?: string;
+  lat: number;
+  lon: number;
+  timestamp: string;
+  callsign: string;
+};
 
 type RadarMapProps = {
   product: string;
@@ -15,13 +25,30 @@ type RadarMapProps = {
   mapType: MapType;
   frameUrl?: string | null;
   frameLabel?: string;
+  spotterReports?: SpotterPin[];
+  onMapClickCoordinates?: (coords: [number, number]) => void;
 };
 
+// IDs for sources and layers
 const RADAR_SOURCE_ID = 'mesovortex-nexrad';
 const RADAR_LAYER_ID = 'mesovortex-nexrad-layer';
+
 const SITES_SOURCE_ID = 'nexrad-sites';
 const SITES_LAYER_ID = 'nexrad-sites-pills';
 const SITES_LABEL_LAYER_ID = 'nexrad-sites-labels';
+
+const NWS_WARNINGS_SOURCE_ID = 'nws-warnings';
+const NWS_WARNINGS_FILL_ID = 'nws-warnings-fill';
+const NWS_WARNINGS_LINE_ID = 'nws-warnings-line';
+
+const SPC_OUTLOOK_SOURCE_ID = 'spc-outlooks';
+const SPC_OUTLOOK_FILL_ID = 'spc-outlooks-fill';
+const SPC_OUTLOOK_LINE_ID = 'spc-outlooks-line';
+
+const SPOTTER_SOURCE_ID = 'spotter-pins';
+const SPOTTER_LAYER_ID = 'spotter-pins-circle';
+const SPOTTER_LABEL_LAYER_ID = 'spotter-pins-label';
+
 const TERRAIN_SOURCE_ID = 'terrainSource';
 
 function makeStyle(mapType: MapType): StyleSpecification {
@@ -41,9 +68,7 @@ function makeStyle(mapType: MapType): StyleSpecification {
           }
         : {
             type: 'raster',
-            tiles: [
-              'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            ],
+            tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
             tileSize: 256,
             maxzoom: 19,
             attribution: '© OpenStreetMap contributors',
@@ -69,7 +94,6 @@ function makeStyle(mapType: MapType): StyleSpecification {
         type: 'raster',
         source: 'basemap',
       },
-
       ...(mapType === 'terrain'
         ? [
             {
@@ -121,478 +145,96 @@ export function RadarMap({
   mapType,
   frameUrl = null,
   frameLabel,
+  spotterReports = [],
+  onMapClickCoordinates,
 }: RadarMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const currentTileUrlRef = useRef<string | null>(null);
 
-  const [radarStatus, setRadarStatus] = useState(
-    'Initializing map…'
-  );
-
+  const [radarStatus, setRadarStatus] = useState('Initializing map…');
   const [mapReady, setMapReady] = useState(false);
+  const [localSpotters, setLocalSpotters] = useState<SpotterPin[]>([]);
 
   const site =
-    RADAR_SITES.find(
-      (s) => s.id === radarSite || s.radarId === radarSite
-    ) || RADAR_SITES[0];
+    RADAR_SITES.find((s) => s.id === radarSite || s.radarId === radarSite) ||
+    RADAR_SITES[0];
 
   const productLabel = product.toUpperCase();
 
-  // ----------------------------------------
-  // NEXRAD SITE MARKERS
-  // ----------------------------------------
+  // Combine external spotter reports with local ad-hoc reports
+  const allSpotters = [...spotterReports, ...localSpotters];
 
-  const installSiteMarkers = useCallback(
-    (map: MapLibreMap) => {
-      if (map.getSource(SITES_SOURCE_ID)) return;
+  // ----------------------------------------------------
+  // 1. SPC CONVECTIVE OUTLOOKS LAYER
+  // ----------------------------------------------------
+  const installSPCOutlooks = useCallback(async (map: MapLibreMap) => {
+    try {
+      const res = await fetch('/api/spc/outlooks');
+      if (!res.ok) return;
+      const data = await res.json();
 
-      const features = RADAR_SITES.map((s) => ({
-        type: 'Feature' as const,
-
-        geometry: {
-          type: 'Point' as const,
-          coordinates: [s.lon, s.lat],
-        },
-
-        properties: {
-          radarId: s.radarId,
-          name: s.name,
-          id: s.id,
-          isActive:
-            s.id === radarSite || s.radarId === radarSite,
-        },
-      }));
-
-      map.addSource(SITES_SOURCE_ID, {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features,
-        },
-      });
-
-      // Radar site markers
-      map.addLayer({
-        id: SITES_LAYER_ID,
-        type: 'circle',
-        source: SITES_SOURCE_ID,
-
-        paint: {
-          'circle-radius': [
-            'case',
-            ['get', 'isActive'],
-            18,
-            14,
-          ],
-
-          'circle-color': [
-            'case',
-            ['get', 'isActive'],
-            '#0891b2',
-            '#1e293b',
-          ],
-
-          'circle-stroke-width': 2,
-
-          'circle-stroke-color': [
-            'case',
-            ['get', 'isActive'],
-            '#22d3ee',
-            '#475569',
-          ],
-
-          'circle-opacity': 0.95,
-          'circle-pitch-alignment': 'map',
-        },
-      });
-
-      // Radar ID labels
-      map.addLayer({
-        id: SITES_LABEL_LAYER_ID,
-        type: 'symbol',
-        source: SITES_SOURCE_ID,
-
-        layout: {
-          'text-field': ['get', 'radarId'],
-
-          'text-size': [
-            'case',
-            ['get', 'isActive'],
-            11,
-            10,
-          ],
-
-          'text-font': [
-            'Open Sans Bold',
-            'Arial Unicode MS Bold',
-          ],
-
-          'text-anchor': 'center',
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-        },
-
-        paint: {
-          'text-color': '#f1f5f9',
-          'text-halo-color': 'rgba(0,0,0,0.6)',
-          'text-halo-width': 1,
-        },
-      });
-    },
-    [radarSite]
-  );
-
-  // ----------------------------------------
-  // RADAR TILE LAYER
-  // ----------------------------------------
-
-  const installOrUpdateRadarLayer = useCallback(
-    (map: MapLibreMap, tileUrl: string) => {
-      if (!tileUrl) return;
-
-      if (map.getLayer(RADAR_LAYER_ID)) {
-        map.removeLayer(RADAR_LAYER_ID);
-      }
-
-      if (map.getSource(RADAR_SOURCE_ID)) {
-        map.removeSource(RADAR_SOURCE_ID);
-      }
-
-      map.addSource(RADAR_SOURCE_ID, {
-        type: 'raster',
-        tiles: [tileUrl],
-        tileSize: 256,
-        scheme: 'xyz',
-        attribution:
-          'NEXRAD Level III via Iowa Environmental Mesonet',
-      });
-
-      const beforeId = map.getLayer(SITES_LAYER_ID)
-        ? SITES_LAYER_ID
-        : undefined;
-
-      map.addLayer(
-        {
-          id: RADAR_LAYER_ID,
-          type: 'raster',
-          source: RADAR_SOURCE_ID,
-
-          paint: {
-            'raster-opacity': 0.9,
-            'raster-fade-duration': 0,
-          },
-        },
-        beforeId
-      );
-
-      currentTileUrlRef.current = tileUrl;
-    },
-    []
-  );
-
-  // ----------------------------------------
-  // CREATE MAP
-  // ----------------------------------------
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    setMapReady(false);
-    currentTileUrlRef.current = null;
-
-    if (mapRef.current) {
-      mapRef.current.remove();
-      mapRef.current = null;
-    }
-
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: makeStyle(mapType),
-      center: [site.lon, site.lat],
-      zoom: 7.2,
-      attributionControl: {
-        compact: true,
-      },
-    });
-
-    mapRef.current = map;
-
-    map.addControl(
-      new maplibregl.NavigationControl({
-        visualizePitch: true,
-      }),
-      'top-right'
-    );
-
-    map.addControl(
-      new maplibregl.ScaleControl({
-        maxWidth: 120,
-      }),
-      'bottom-left'
-    );
-
-    map.on('load', () => {
-      if (mapType === 'terrain') {
-        map.setTerrain({
-          source: TERRAIN_SOURCE_ID,
-          exaggeration: 1,
+      if (!map.getSource(SPC_OUTLOOK_SOURCE_ID)) {
+        map.addSource(SPC_OUTLOOK_SOURCE_ID, {
+          type: 'geojson',
+          data,
         });
-      }
 
-      installSiteMarkers(map);
-
-      // Register interactions after the marker layers exist.
-      map.on('click', SITES_LAYER_ID, (e) => {
-        const feature = e.features?.[0];
-
-        if (!feature || feature.geometry.type !== 'Point') {
-          return;
-        }
-
-        const coords = (
-          feature.geometry as GeoJSON.Point
-        ).coordinates.slice() as [number, number];
-
-        const props = feature.properties as {
-          radarId: string;
-          name: string;
-        } | null;
-
-        if (!props) return;
-
-        const popupContent = document.createElement('div');
-        popupContent.style.fontFamily = 'system-ui';
-        popupContent.style.padding = '2px 4px';
-
-        const title = document.createElement('strong');
-        title.style.color = '#22d3ee';
-        title.textContent = `NEXRAD ${props.radarId}`;
-
-        const name = document.createElement('div');
-        name.style.color = '#94a3b8';
-        name.style.fontSize = '12px';
-        name.textContent = props.name;
-
-        popupContent.append(title, name);
-
-        new maplibregl.Popup({
-          closeButton: true,
-          offset: 14,
-        })
-          .setLngLat(coords)
-          .setDOMContent(popupContent)
-          .addTo(map);
-      });
-
-      map.on('mouseenter', SITES_LAYER_ID, () => {
-        map.getCanvas().style.cursor = 'pointer';
-      });
-
-      map.on('mouseleave', SITES_LAYER_ID, () => {
-        map.getCanvas().style.cursor = '';
-      });
-
-      setMapReady(true);
-      setRadarStatus(`Map ready · ${site.radarId}`);
-    });
-
-    map.on('error', (event) => {
-      console.error('MapLibre error:', event.error);
-    });
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-      currentTileUrlRef.current = null;
-    };
-
-    // Map is recreated when the map type changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapType]);
-
-  // ----------------------------------------
-  // FLY TO SELECTED RADAR SITE
-  // ----------------------------------------
-
-  useEffect(() => {
-    const map = mapRef.current;
-
-    if (!map || !mapReady) return;
-
-    map.flyTo({
-      center: [site.lon, site.lat],
-      zoom: 7.2,
-      essential: true,
-      duration: 1100,
-    });
-
-    const source = map.getSource(SITES_SOURCE_ID);
-
-    if (source) {
-      const features = RADAR_SITES.map((s) => ({
-        type: 'Feature' as const,
-
-        geometry: {
-          type: 'Point' as const,
-          coordinates: [s.lon, s.lat],
-        },
-
-        properties: {
-          radarId: s.radarId,
-          name: s.name,
-          id: s.id,
-          isActive:
-            s.id === site.id || s.radarId === site.radarId,
-        },
-      }));
-
-      (source as maplibregl.GeoJSONSource).setData({
-        type: 'FeatureCollection',
-        features,
-      });
-    }
-  }, [site.id, site.lon, site.lat, site.radarId, mapReady]);
-
-  // ----------------------------------------
-  // PARENT-DRIVEN RADAR FRAMES
-  // ----------------------------------------
-
-  useEffect(() => {
-    const map = mapRef.current;
-
-    if (!map || !mapReady || !frameUrl) return;
-
-    if (frameUrl === currentTileUrlRef.current) return;
-
-    installOrUpdateRadarLayer(map, frameUrl);
-
-    setRadarStatus(
-      `NEXRAD ${site.radarId} · ${productLabel} · ${
-        frameLabel || 'frame'
-      }`
-    );
-  }, [
-    frameUrl,
-    frameLabel,
-    mapReady,
-    site.radarId,
-    productLabel,
-    installOrUpdateRadarLayer,
-  ]);
-
-  // ----------------------------------------
-  // FALLBACK: LOAD LATEST RADAR FRAME
-  // ----------------------------------------
-
-  useEffect(() => {
-    if (!mapReady || frameUrl) return;
-
-    let cancelled = false;
-
-    async function loadLatest() {
-      const map = mapRef.current;
-
-      if (!map || cancelled) return;
-
-      try {
-        setRadarStatus(
-          `Loading ${site.radarId} ${productLabel}…`
-        );
-
-        const response = await fetch(
-          `/api/nexrad/frames?site=${encodeURIComponent(
-            site.radarId
-          )}&product=${encodeURIComponent(product)}`,
+        // Outlook Fill
+        map.addLayer(
           {
-            cache: 'no-store',
-          }
+            id: SPC_OUTLOOK_FILL_ID,
+            type: 'fill',
+            source: SPC_OUTLOOK_SOURCE_ID,
+            paint: {
+              'fill-color': [
+                'match',
+                ['get', 'LABEL'],
+                'TSTM', '#c1e9c1',
+                'MRGL', '#7fc57f',
+                'SLGT', '#f6f67d',
+                'ENH', '#edbf69',
+                'MDT', '#e56d6d',
+                'HIGH', '#ff66ff',
+                'rgba(0,0,0,0)',
+              ],
+              'fill-opacity': 0.22,
+            },
+          },
+          map.getLayer('terrain-hillshade') ? undefined : undefined
         );
 
-        const data = await response.json();
+        // Outlook Stroke
+        map.addLayer({
+          id: SPC_OUTLOOK_LINE_ID,
+          type: 'line',
+          source: SPC_OUTLOOK_SOURCE_ID,
+          paint: {
+            'line-color': [
+              'match',
+              ['get', 'LABEL'],
+              'TSTM', '#81c784',
+              'MRGL', '#4caf50',
+              'SLGT', '#fbc02d',
+              'ENH', '#f57c00',
+              'MDT', '#d32f2f',
+              'HIGH', '#aa00ff',
+              'rgba(255,255,255,0.4)',
+            ],
+            'line-width': 1.5,
+            'line-dasharray': [3, 2],
+          },
+        });
 
-        if (cancelled) return;
+        // Click on SPC Polygon
+        map.on('click', SPC_OUTLOOK_FILL_ID, (e) => {
+          const props = e.features?.[0]?.properties;
+          if (!props) return;
 
-        if (!response.ok) {
-          throw new Error(
-            data.error || 'NEXRAD unavailable'
-          );
-        }
-
-        const url =
-          data.frames && data.frames.length > 0
-            ? data.frames[data.frames.length - 1].tileUrl
-            : data.tileUrl;
-
-        const liveMap = mapRef.current;
-
-        if (url && liveMap) {
-          installOrUpdateRadarLayer(liveMap, url);
-
-          setRadarStatus(
-            `NEXRAD ${site.radarId} · ${productLabel} · latest available Level III scan`
-          );
-        } else {
-          setRadarStatus(
-            `No radar frames available for ${site.radarId}`
-          );
-        }
-      } catch (err) {
-        console.error('NEXRAD load failed:', err);
-
-        if (!cancelled) {
-          setRadarStatus(
-            `NEXRAD ${site.radarId} radar unavailable`
-          );
-        }
-      }
-    }
-
-    void loadLatest();
-
-    const timer = window.setInterval(
-      () => void loadLatest(),
-      5 * 60 * 1000
-    );
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [
-    mapReady,
-    site.radarId,
-    product,
-    frameUrl,
-    installOrUpdateRadarLayer,
-    productLabel,
-  ]);
-
-  // ----------------------------------------
-  // RENDER
-  // ----------------------------------------
-
-  return (
-    <div className="radar-map-root relative h-full w-full">
-      <div
-        ref={containerRef}
-        className="radar-map-container absolute inset-0"
-        aria-label={`${mapType} map with NEXRAD ${productLabel} from ${site.radarId}`}
-      />
-
-      <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-md bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-200 backdrop-blur">
-        <span
-          className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${
-            radarStatus.includes('latest') ||
-            radarStatus.includes('LIVE')
-              ? 'bg-emerald-400'
-              : 'bg-amber-400'
-          }`}
-        />
-
-        {radarStatus}
-      </div>
-    </div>
-  );
-}
+          new maplibregl.Popup({ closeButton: true, offset: 10 })
+            .setLngLat(e.lngLat)
+            .setHTML(
+              `<div style="font-family:system-ui;padding:4px 6px;">
+                <b style="color:#f59e0b;font-size:13px;">SPC Day 1 Convective Risk</b>
+                <div style="font-size:1
 
