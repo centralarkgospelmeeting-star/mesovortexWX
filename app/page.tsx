@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
-import { RadarMap, SpotterPin, PaletteType } from '../components/RadarMap';
+import { RadarMap, SpotterPin, PaletteType, ModeTab } from '../components/RadarMap';
 import { WeatherAssistant } from '../components/WeatherAssistant';
 import { EmergencyAlertTone } from '../components/EmergencyAlertTone';
 import { SynchronizedQuadView } from '../components/SynchronizedQuadView';
@@ -12,7 +12,6 @@ import { PlacefileManagerModal, ActivePlacefile } from '../components/PlacefileM
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 
 type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
-type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Models' | 'Outlooks';
 
 type Frame = {
   time: string;
@@ -32,7 +31,7 @@ export default function MesoVortexWX() {
   const [palCurve, setPalCurve] = useState<ParsedPalCurve | null>(null);
   const [showPalModal, setShowPalModal] = useState(false);
 
-  // Gibson Ridge Placefiles State (Preloads PlacefileNation & FreeLightning)
+  // Gibson Ridge Placefiles State
   const [showPlacefileModal, setShowPlacefileModal] = useState(false);
   const [placefiles, setPlacefiles] = useState<ActivePlacefile[]>([
     {
@@ -52,7 +51,7 @@ export default function MesoVortexWX() {
   // FastScan Ultra-Low Latency Engine
   const [fastScan, setFastScan] = useState(true);
 
-  // Layer Toggles
+  // WeatherWise Layer Toggles
   const [showRadarPills, setShowRadarPills] = useState(true);
   const [showLightning, setShowLightning] = useState(true);
   const [showMetars, setShowMetars] = useState(false);
@@ -186,6 +185,7 @@ export default function MesoVortexWX() {
           <RadarMap
             product={product}
             radarSite={radarSite}
+            mode={activeTab}
             mapType="satellite"
             palette={palette}
             palCurve={palCurve}
@@ -208,6 +208,7 @@ export default function MesoVortexWX() {
             <RadarMap
               product={product2}
               radarSite={radarSite}
+              mode={activeTab}
               mapType="satellite"
               palette={palette}
               palCurve={palCurve}
@@ -224,7 +225,7 @@ export default function MesoVortexWX() {
         )}
       </div>
 
-      {/* 2. TOP FLOATING PILL BAR (WeatherWise Pro Style) */}
+      {/* 2. TOP FLOATING PILL BAR (Interactive Mode Switcher) */}
       <header className="pointer-events-none absolute left-0 right-0 top-3 z-30 flex justify-center px-4">
         <nav aria-label="Mode switcher" className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-950/90 p-1.5 shadow-2xl backdrop-blur-xl">
           <div className="flex items-center gap-2 pl-2 pr-3">
@@ -272,15 +273,19 @@ export default function MesoVortexWX() {
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-black tracking-wide text-white">{currentSite.id}</span>
-              <span className="text-[11px] font-medium text-slate-300">{currentSite.name}</span>
+              <span className="text-xs font-black tracking-wide text-white">
+                {activeTab === 'Radar' ? currentSite.id : activeTab.toUpperCase()}
+              </span>
+              <span className="text-[11px] font-medium text-slate-300">
+                {activeTab === 'Radar' ? currentSite.name : `CONUS ${activeTab} View`}
+              </span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
               <span className="text-cyan-400 font-semibold">{productInfo?.label}</span>
               <span>•</span>
-              <span>Tilt 0.5°</span>
+              <span>{activeTab === 'Radar' ? 'Tilt 0.5°' : 'National'}</span>
               <span>•</span>
-              <span className="text-amber-400 font-semibold">{fastScan ? '⚡ FastScan 8s' : 'VCP 212'}</span>
+              <span className="text-amber-400 font-semibold">{fastScan ? '⚡ FastScan 8s' : 'Live Feed'}</span>
             </div>
           </div>
         </div>
@@ -308,20 +313,18 @@ export default function MesoVortexWX() {
 
       {/* 4. RIGHT-HAND FLOATING ACTION DOCK */}
       <div className="absolute right-4 top-16 z-20 flex flex-col gap-2">
-        {/* Gibson Ridge Placefile Manager Button */}
         <button
           onClick={() => setShowPlacefileModal(true)}
           className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition"
-          title="Gibson Ridge Placefile Manager (METARs / FreeLightning)"
+          title="Gibson Ridge Placefile Manager"
         >
           📡
         </button>
 
-        {/* Gibson Ridge .pal Color Table Loader Button */}
         <button
           onClick={() => setShowPalModal(true)}
           className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-600/30 text-amber-200 shadow-xl backdrop-blur-xl hover:bg-amber-600/50 transition"
-          title="Load Gibson Ridge (.pal) Color Table File"
+          title="Load Gibson Ridge (.pal) Color Table"
         >
           📁
         </button>
