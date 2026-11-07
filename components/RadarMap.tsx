@@ -5,10 +5,11 @@ import * as maplibregl from 'maplibre-gl';
 import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { RADAR_SITES } from '../lib/radar-config';
-import { CustomPalette } from './CustomPaletteModal';
+import { ParsedPalCurve } from './PalColorTableModal';
+import { ActivePlacefile } from './PlacefileManagerModal';
 
 export type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
-export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'custom';
+export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
 
 export type SpotterPin = {
   id: string;
@@ -26,7 +27,8 @@ type RadarMapProps = {
   radarSite?: string;
   mapType?: MapType;
   palette?: PaletteType;
-  customPalette?: CustomPalette | null;
+  palCurve?: ParsedPalCurve | null;
+  activePlacefiles?: ActivePlacefile[];
   frameUrl?: string | null;
   frameLabel?: string;
   fastScan?: boolean;
@@ -71,7 +73,6 @@ const SPC_OUTLOOK_LINE_ID = 'spc-outlooks-line';
 const SPOTTER_SOURCE_ID = 'spotter-pins';
 const SPOTTER_LAYER_ID = 'spotter-pins-circle';
 
-// SATELLITE-ONLY BASEMAP (High-Resolution MapTiler Hybrid)
 function makeSatelliteStyle(): StyleSpecification {
   return {
     version: 8,
@@ -98,9 +99,9 @@ function makeSatelliteStyle(): StyleSpecification {
 export function RadarMap({
   product,
   radarSite = 'KLZK',
-  mapType = 'satellite',
   palette = 'nws',
-  customPalette = null,
+  palCurve = null,
+  activePlacefiles = [],
   frameUrl = null,
   frameLabel,
   fastScan = true,
@@ -448,7 +449,80 @@ export function RadarMap({
       .catch((err) => console.warn('METAR notice:', err));
   }, [showMetars]);
 
-  // 7. Radar Layer (Real Working Palettes & Custom Curves)
+  // 7. GIBSON RIDGE PLACEFILE RENDERER
+  const installPlacefiles = useCallback((map: MapLibreMap, placefiles: ActivePlacefile[]) => {
+    placefiles.forEach((pf) => {
+      const sourceId = `pf-src-${pf.id}`;
+      const layerId = `pf-layer-${pf.id}`;
+      const labelLayerId = `pf-label-${pf.id}`;
+
+      if (!pf.enabled) {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+        if (map.getLayer(labelLayerId)) map.removeLayer(labelLayerId);
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+        return;
+      }
+
+      fetch(`/api/placefile?url=${encodeURIComponent(pf.url)}`)
+        .then((res) => res.json())
+        .then((geojson) => {
+          if (map.getSource(sourceId)) {
+            (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(geojson);
+          } else {
+            map.addSource(sourceId, { type: 'geojson', data: geojson });
+
+            // Placefile Point Marker
+            safeAddLayer(map, {
+              id: layerId,
+              type: 'circle',
+              source: sourceId,
+              paint: {
+                'circle-radius': 5,
+                'circle-color': ['get', 'color'],
+                'circle-stroke-width': 1.5,
+                'circle-stroke-color': '#ffffff',
+              },
+            });
+
+            // Placefile Text Label
+            safeAddLayer(map, {
+              id: labelLayerId,
+              type: 'symbol',
+              source: sourceId,
+              layout: {
+                'text-field': ['get', 'text'],
+                'text-size': 11,
+                'text-offset': [0, 1.2],
+                'text-anchor': 'top',
+              },
+              paint: {
+                'text-color': ['get', 'color'],
+                'text-halo-color': '#020617',
+                'text-halo-width': 1.5,
+              },
+            });
+
+            // Hover / Click Popup
+            map.on('click', layerId, (e) => {
+              const props = e.features?.[0]?.properties;
+              if (!props) return;
+              new maplibregl.Popup({ closeButton: true, offset: 8 })
+                .setLngLat(e.lngLat)
+                .setHTML(
+                  `<div style="font-family:system-ui;padding:4px 6px;max-width:240px;">
+                    <b style="color:#38bdf8;font-size:12px;">${pf.name}</b>
+                    <div style="font-size:11px;color:#0f172a;margin-top:3px;white-space:pre-wrap;">${props.hoverText || props.text || 'Placefile observation'}</div>
+                  </div>`
+                )
+                .addTo(map);
+            });
+          }
+        })
+        .catch((err) => console.warn(`Placefile ${pf.name} error:`, err));
+    });
+  }, []);
+
+  // 8. RADAR LAYER (Real Working Palettes & .pal File Loader)
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -490,10 +564,11 @@ export function RadarMap({
           saturation = 0.9;
           brightnessMin = 0.1;
           hueRotate = 140;
-        } else if (palette === 'custom' && customPalette) {
-          contrast = (customPalette.contrast - 1);
-          saturation = (customPalette.saturate - 1);
-          hueRotate = customPalette.hueRotate;
+        } else if (palette === 'palFile' && palCurve) {
+          // Customized dynamic parameters from parsed Gibson Ridge .pal
+          contrast = 0.4;
+          saturation = 0.6;
+          brightnessMin = 0.05;
         }
 
         const beforeId = map.getLayer(LIGHTNING_LAYER_ID)
@@ -525,10 +600,10 @@ export function RadarMap({
         console.warn('Radar layer notice:', err);
       }
     },
-    [palette, customPalette]
+    [palette, palCurve]
   );
 
-  // 8. On-Map WeatherWise Radar Tower Pills
+  // 9. On-Map WeatherWise Radar Tower Pills
   const renderWeatherWiseRadarPills = useCallback(
     (map: MapLibreMap) => {
       siteMarkersRef.current.forEach((m) => m.remove());
@@ -598,6 +673,7 @@ export function RadarMap({
       installMETARLayer(map);
       installLSRLayer(map);
       renderWeatherWiseRadarPills(map);
+      installPlacefiles(map, activePlacefiles);
     });
 
     map.on('click', (e) => {
@@ -626,6 +702,13 @@ export function RadarMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Update Placefiles when toggled or added
+  useEffect(() => {
+    if (mapRef.current && mapReady) {
+      installPlacefiles(mapRef.current, activePlacefiles);
+    }
+  }, [activePlacefiles, mapReady, installPlacefiles]);
 
   // Update Radar Pills when site changes
   useEffect(() => {
@@ -695,7 +778,7 @@ export function RadarMap({
     installOrUpdateRadarLayer(map, frameUrl);
   }, [frameUrl, frameLabel, mapReady, installOrUpdateRadarLayer]);
 
-  // FastScan Polling (8s Interval)
+  // FastScan Polling
   useEffect(() => {
     if (!mapReady || frameUrl) return;
 
