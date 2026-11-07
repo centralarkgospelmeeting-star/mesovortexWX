@@ -7,6 +7,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { RADAR_SITES } from '../lib/radar-config';
 import { CustomPalette } from './CustomPaletteModal';
 
+export type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
 export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'custom';
 
 export type SpotterPin = {
@@ -23,6 +24,7 @@ export type SpotterPin = {
 type RadarMapProps = {
   product: string;
   radarSite?: string;
+  mapType?: MapType;
   palette?: PaletteType;
   customPalette?: CustomPalette | null;
   frameUrl?: string | null;
@@ -69,7 +71,7 @@ const SPC_OUTLOOK_LINE_ID = 'spc-outlooks-line';
 const SPOTTER_SOURCE_ID = 'spotter-pins';
 const SPOTTER_LAYER_ID = 'spotter-pins-circle';
 
-// 1. SATELLITE ONLY BASEMAP (Locked to High-Resolution MapTiler Hybrid)
+// SATELLITE-ONLY BASEMAP (High-Resolution MapTiler Hybrid)
 function makeSatelliteStyle(): StyleSpecification {
   return {
     version: 8,
@@ -96,6 +98,7 @@ function makeSatelliteStyle(): StyleSpecification {
 export function RadarMap({
   product,
   radarSite = 'KLZK',
+  mapType = 'satellite',
   palette = 'nws',
   customPalette = null,
   frameUrl = null,
@@ -445,7 +448,7 @@ export function RadarMap({
       .catch((err) => console.warn('METAR notice:', err));
   }, [showMetars]);
 
-  // 7. RADAR LAYER WITH REAL WORKING PALETTES & CUSTOM COLOR CURVES
+  // 7. Radar Layer (Real Working Palettes & Custom Curves)
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -462,7 +465,6 @@ export function RadarMap({
           attribution: 'NEXRAD Level III via IEM',
         });
 
-        // Genuine Color Curve Modifications
         let contrast = 0.15;
         let saturation = 0.3;
         let brightnessMin = 0.0;
@@ -487,7 +489,7 @@ export function RadarMap({
           contrast = 0.7;
           saturation = 0.9;
           brightnessMin = 0.1;
-          hueRotate = 140; // Rotates green/red couplets into ultra-distinct neon
+          hueRotate = 140;
         } else if (palette === 'custom' && customPalette) {
           contrast = (customPalette.contrast - 1);
           saturation = (customPalette.saturate - 1);
@@ -693,14 +695,12 @@ export function RadarMap({
     installOrUpdateRadarLayer(map, frameUrl);
   }, [frameUrl, frameLabel, mapReady, installOrUpdateRadarLayer]);
 
-  // -------------------------------------------------------------
-  // FASTSCAN REAL-TIME POLLING ENGINE (8s INTERVAL)
-  // -------------------------------------------------------------
+  // FastScan Polling (8s Interval)
   useEffect(() => {
     if (!mapReady || frameUrl) return;
 
     let cancelled = false;
-    const pollInterval = fastScan ? 8000 : 60000; // 8s Ultra-Low-Latency vs 1m normal
+    const pollInterval = fastScan ? 8000 : 60000;
 
     const fetchLatestScan = () => {
       const cacheBuster = `&_cb=${Date.now()}`;
@@ -716,7 +716,7 @@ export function RadarMap({
             installOrUpdateRadarLayer(mapRef.current, url);
           }
         })
-        .catch((err) => console.warn('FastScan fetch notice:', err));
+        .catch((err) => console.warn('FastScan notice:', err));
     };
 
     fetchLatestScan();
