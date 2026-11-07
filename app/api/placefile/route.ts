@@ -2,26 +2,39 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-type PlacefileItem = {
-  lat: number;
-  lon: number;
-  text?: string;
-  hoverText?: string;
-  color?: string;
-  type: 'text' | 'icon' | 'dot';
+type GeoFeature = {
+  type: 'Feature';
+  geometry: {
+    type: 'Point' | 'LineString' | 'Polygon';
+    coordinates: any;
+  };
+  properties: {
+    id: string;
+    text?: string;
+    hoverText?: string;
+    color: string;
+    fillColor?: string;
+  };
 };
 
-function parsePlacefileText(text: string): PlacefileItem[] {
-  const lines = text.split('\n');
-  const items: PlacefileItem[] = [];
+function parseFullGibsonRidgePlacefile(rawText: string): GeoFeature[] {
+  const lines = rawText.split(/\r?\n/);
+  const features: GeoFeature[] = [];
 
-  let currentColor = '#ffffff';
+  let currentColor = '#38bdf8';
+  let featureCount = 0;
+
+  let currentBlockType: 'Line' | 'Polygon' | null = null;
+  let currentCoords: [number, number][] = [];
+  let currentBlockHover = '';
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const rawLine = lines[i];
+    const line = rawLine.trim();
+
     if (!line || line.startsWith(';') || line.startsWith('//')) continue;
 
-    // Parse Color: r g b or r g b a
+    // 1. Color commands
     if (line.startsWith('Color:')) {
       const parts = line.replace('Color:', '').trim().split(/\s+/).map(Number);
       if (parts.length >= 3) {
@@ -30,70 +43,134 @@ function parsePlacefileText(text: string): PlacefileItem[] {
       continue;
     }
 
-    // Parse Text: lat, lon, font, "string", "hover"
+    // 2. Block Finish (End:)
+    if (line.startsWith('End:') || line.startsWith('END:')) {
+      if (currentBlockType === 'Line' && currentCoords.length >= 2) {
+        features.push({
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: currentCoords,
+          },
+          properties: {
+            id: `pf-line-${featureCount++}`,
+            color: currentColor,
+            hoverText: currentBlockHover,
+          },
+        });
+      } else if (currentBlockType === 'Polygon' && currentCoords.length >= 3) {
+        const closed = [...currentCoords];
+        if (
+          closed[0][0] !== closed[closed.length - 1][0] ||
+          closed[0][1] !== closed[closed.length - 1][1]
+        ) {
+          closed.push(closed[0]);
+        }
+        features.push({
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [closed],
+          },
+          properties: {
+            id: `pf-poly-${featureCount++}`,
+            color: currentColor,
+            fillColor: currentColor,
+            hoverText: currentBlockHover,
+          },
+        });
+      }
+      currentBlockType = null;
+      currentCoords = [];
+      currentBlockHover = '';
+      continue;
+    }
+
+    // 3. Line Block Start
+    if (line.startsWith('Line:') || line.startsWith('LINE:')) {
+      currentBlockType = 'Line';
+      currentCoords = [];
+      const hoverMatch = line.match(/"([^"]*)"/);
+      currentBlockHover = hoverMatch ? hoverMatch[1] : '';
+      continue;
+    }
+
+    // 4. Polygon Block Start
+    if (line.startsWith('Polygon:') || line.startsWith('POLYGON:')) {
+      currentBlockType = 'Polygon';
+      currentCoords = [];
+      const hoverMatch = line.match(/"([^"]*)"/);
+      currentBlockHover = hoverMatch ? hoverMatch[1] : '';
+      continue;
+    }
+
+    // 5. Inside Coordinate Block
+    if (currentBlockType) {
+      const coordMatch = line.match(/^\s*([-\d.]+)\s*,\s*([-\d.]+)/);
+      if (coordMatch) {
+        const lat = parseFloat(coordMatch[1]);
+        const lon = parseFloat(coordMatch[2]);
+        if (!isNaN(lat) && !isNaN(lon)) {
+          currentCoords.push([lon, lat]);
+        }
+      }
+      continue;
+    }
+
+    // 6. Text Elements
     if (line.startsWith('Text:')) {
       const match = line.match(/Text:\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*\d+\s*,\s*"([^"]*)"(?:\s*,\s*"([^"]*)")?/);
       if (match) {
         const lat = parseFloat(match[1]);
         const lon = parseFloat(match[2]);
-        const str = match[3];
-        const hover = match[4] || str;
+        const text = match[3];
+        const hover = match[4] || text;
         if (!isNaN(lat) && !isNaN(lon)) {
-          items.push({
-            lat,
-            lon,
-            text: str.replace(/\\n/g, ' '),
-            hoverText: hover.replace(/\\n/g, '\n'),
-            color: currentColor,
-            type: 'text',
+          features.push({
+            type: 'Feature',
+            geometry: {
+              type: 'Point',
+              coordinates: [lon, lat],
+            },
+            properties: {
+              id: `pf-txt-${featureCount++}`,
+              text: text.replace(/\\n/g, ' '),
+              hoverText: hover.replace(/\\n/g, '\n'),
+              color: currentColor,
+            },
           });
         }
       }
       continue;
     }
 
-    // Parse Icon: lat, lon, heading, iconFile, iconIndex, "hover"
-    if (line.startsWith('Icon:')) {
-      const match = line.match(/Icon:\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*[-\d.]+\s*,\s*\d+\s*,\s*\d+(?:\s*,\s*"([^"]*)")?/);
+    // 7. Icon / Dot Elements
+    if (line.startsWith('Icon:') || line.startsWith('ICON:') || line.startsWith('Point:')) {
+      const match = line.match(/(?:Icon|Point):\s*([-\d.]+)\s*,\s*([-\d.]+)(?:[^\n"]*"([^"]*)")?/);
       if (match) {
         const lat = parseFloat(match[1]);
         const lon = parseFloat(match[2]);
-        const hover = match[3] || 'Placefile Icon';
+        const hover = match[3] || 'Placefile Observation';
         if (!isNaN(lat) && !isNaN(lon)) {
-          items.push({
-            lat,
-            lon,
-            text: '⚡',
-            hoverText: hover.replace(/\\n/g, '\n'),
-            color: currentColor,
-            type: 'icon',
-          });
-        }
-      }
-      continue;
-    }
-
-    // Parse Dot / Point: lat, lon
-    if (line.startsWith('Point:')) {
-      const match = line.match(/Point:\s*([-\d.]+)\s*,\s*([-\d.]+)/);
-      if (match) {
-        const lat = parseFloat(match[1]);
-        const lon = parseFloat(match[2]);
-        if (!isNaN(lat) && !isNaN(lon)) {
-          items.push({
-            lat,
-            lon,
-            text: '•',
-            hoverText: 'Placefile point',
-            color: currentColor,
-            type: 'dot',
+          features.push({
+            type: 'Feature',
+            geometry: {
+              type: 'Point',
+              coordinates: [lon, lat],
+            },
+            properties: {
+              id: `pf-pt-${featureCount++}`,
+              text: '•',
+              hoverText: hover.replace(/\\n/g, '\n'),
+              color: currentColor,
+            },
           });
         }
       }
     }
   }
 
-  return items;
+  return features;
 }
 
 export async function GET(request: Request) {
@@ -117,22 +194,7 @@ export async function GET(request: Request) {
     }
 
     const rawText = await res.text();
-    const parsedItems = parsePlacefileText(rawText);
-
-    const features = parsedItems.map((item, idx) => ({
-      type: 'Feature',
-      geometry: {
-        type: 'Point',
-        coordinates: [item.lon, item.lat],
-      },
-      properties: {
-        id: `pf-${idx}`,
-        text: item.text || '',
-        hoverText: item.hoverText || '',
-        color: item.color || '#38bdf8',
-        type: item.type,
-      },
-    }));
+    const features = parseFullGibsonRidgePlacefile(rawText);
 
     return NextResponse.json({
       type: 'FeatureCollection',
