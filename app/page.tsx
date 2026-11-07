@@ -10,6 +10,7 @@ import { SpotterReportModal, SpotterReport } from '../components/SpotterReportMo
 import { PalColorTableModal, ParsedPalCurve } from '../components/PalColorTableModal';
 import { PlacefileManagerModal, ActivePlacefile } from '../components/PlacefileManagerModal';
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
+import { PLACEFILE_NATION_CATALOG } from '../lib/placefile-catalog';
 
 type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
 
@@ -31,22 +32,16 @@ export default function MesoVortexWX() {
   const [palCurve, setPalCurve] = useState<ParsedPalCurve | null>(null);
   const [showPalModal, setShowPalModal] = useState(false);
 
-  // Gibson Ridge Placefiles State
+  // Gibson Ridge Placefiles State (Preloads PlacefileNation Catalog)
   const [showPlacefileModal, setShowPlacefileModal] = useState(false);
-  const [placefiles, setPlacefiles] = useState<ActivePlacefile[]>([
-    {
-      id: 'pfn-metars',
-      name: 'PlacefileNation METARs',
-      url: 'http://placefilenation.com/Placefiles/metars.php',
-      enabled: true,
-    },
-    {
-      id: 'free-lightning',
-      name: 'FreeLightning Strike Feed',
-      url: 'https://www.freelightning.com/hub/placefile.php?request=10462|10821|12602186|10262|10322|10733|0|84764|1',
-      enabled: true,
-    },
-  ]);
+  const [placefiles, setPlacefiles] = useState<ActivePlacefile[]>(() =>
+    PLACEFILE_NATION_CATALOG.map((item) => ({
+      id: item.id,
+      name: item.name,
+      url: item.url,
+      enabled: Boolean(item.defaultEnabled),
+    }))
+  );
 
   // FastScan Ultra-Low Latency Engine
   const [fastScan, setFastScan] = useState(true);
@@ -316,7 +311,7 @@ export default function MesoVortexWX() {
         <button
           onClick={() => setShowPlacefileModal(true)}
           className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition"
-          title="Gibson Ridge Placefile Manager"
+          title="PlacefileNation Suite (54 Feeds)"
         >
           📡
         </button>
