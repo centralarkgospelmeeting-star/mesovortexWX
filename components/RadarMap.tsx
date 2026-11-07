@@ -5,9 +5,9 @@ import * as maplibregl from 'maplibre-gl';
 import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { RADAR_SITES } from '../lib/radar-config';
+import { CustomPalette } from './CustomPaletteModal';
 
-export type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
-export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet';
+export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'custom';
 
 export type SpotterPin = {
   id: string;
@@ -23,10 +23,11 @@ export type SpotterPin = {
 type RadarMapProps = {
   product: string;
   radarSite?: string;
-  mapType: MapType;
   palette?: PaletteType;
+  customPalette?: CustomPalette | null;
   frameUrl?: string | null;
   frameLabel?: string;
+  fastScan?: boolean;
   showLightning?: boolean;
   showMetars?: boolean;
   showLSR?: boolean;
@@ -37,11 +38,6 @@ type RadarMapProps = {
   onMapClickCoordinates?: (coords: [number, number]) => void;
 };
 
-// -------------------------------------------------------------
-// YOUR MAPBOX & MAPTILER CREDENTIALS
-// -------------------------------------------------------------
-const MAPBOX_TOKEN = 'pk.eyJ1IjoiY2VudHJhbGFya2dvc3BlbG1lZXRpbmctc3RhciIsImEiOiJjbXc1ZGZjNzkwN2hxMzBva2dmcWpveWdzIn0.hlPLiOdDno_E9_1aTxTqXA';
-const MAPBOX_STYLE_ID = 'centralarkgospelmeeting-star/cmw5diwpt01zo01qs5ftc22ma';
 const MAPTILER_KEY = '4JiuLmexmU5wIex7AETD';
 
 const RADAR_SOURCE_ID = 'mesovortex-nexrad';
@@ -73,54 +69,25 @@ const SPC_OUTLOOK_LINE_ID = 'spc-outlooks-line';
 const SPOTTER_SOURCE_ID = 'spotter-pins';
 const SPOTTER_LAYER_ID = 'spotter-pins-circle';
 
-// -------------------------------------------------------------
-// RESOLVE MAPBOX FIRST, THEN SATELLITE
-// -------------------------------------------------------------
-function makeMapStyle(mapType: MapType): StyleSpecification {
-  const isSatellite = mapType === 'satellite' || mapType === 'globe';
-
-  if (isSatellite) {
-    // 2. MapTiler Satellite Hybrid
-    return {
-      version: 8,
-      sources: {
-        satelliteBase: {
-          type: 'raster',
-          tiles: [
-            `https://api.maptiler.com/maps/hybrid-v4/{z}/{x}/{y}.jpg?key=${MAPTILER_KEY}`,
-          ],
-          tileSize: 512,
-          attribution: '© MapTiler © OpenStreetMap',
-        },
-      },
-      layers: [
-        {
-          id: 'satellite-layer',
-          type: 'raster',
-          source: 'satelliteBase',
-        },
-      ],
-    };
-  }
-
-  // 1. Mapbox Custom Style First (cmw5diwpt01zo01qs5ftc22ma)
+// 1. SATELLITE ONLY BASEMAP (Locked to High-Resolution MapTiler Hybrid)
+function makeSatelliteStyle(): StyleSpecification {
   return {
     version: 8,
     sources: {
-      mapboxBase: {
+      satelliteBase: {
         type: 'raster',
         tiles: [
-          `https://api.mapbox.com/styles/v1/${MAPBOX_STYLE_ID}/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`,
+          `https://api.maptiler.com/maps/hybrid-v4/{z}/{x}/{y}.jpg?key=${MAPTILER_KEY}`,
         ],
         tileSize: 512,
-        attribution: '© Mapbox © OpenStreetMap',
+        attribution: '© MapTiler © OpenStreetMap',
       },
     },
     layers: [
       {
-        id: 'mapbox-layer',
+        id: 'satellite-base-layer',
         type: 'raster',
-        source: 'mapboxBase',
+        source: 'satelliteBase',
       },
     ],
   };
@@ -129,10 +96,11 @@ function makeMapStyle(mapType: MapType): StyleSpecification {
 export function RadarMap({
   product,
   radarSite = 'KLZK',
-  mapType,
   palette = 'nws',
+  customPalette = null,
   frameUrl = null,
   frameLabel,
+  fastScan = true,
   showLightning = true,
   showMetars = false,
   showLSR = true,
@@ -167,7 +135,7 @@ export function RadarMap({
     }
   };
 
-  // 1. SPC Convective Outlooks
+  // 1. SPC Outlooks
   const installSPCOutlooks = useCallback((map: MapLibreMap) => {
     fetch('/api/spc/outlooks')
       .then((res) => res.json())
@@ -477,7 +445,7 @@ export function RadarMap({
       .catch((err) => console.warn('METAR notice:', err));
   }, [showMetars]);
 
-  // 7. Radar Layer
+  // 7. RADAR LAYER WITH REAL WORKING PALETTES & CUSTOM COLOR CURVES
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -494,21 +462,36 @@ export function RadarMap({
           attribution: 'NEXRAD Level III via IEM',
         });
 
-        let contrast = 0;
-        let saturation = 0;
+        // Genuine Color Curve Modifications
+        let contrast = 0.15;
+        let saturation = 0.3;
+        let brightnessMin = 0.0;
+        let hueRotate = 0;
 
         if (palette === 'radarscope') {
-          contrast = 0.25;
-          saturation = 0.35;
+          contrast = 0.55;
+          saturation = 0.75;
+          brightnessMin = 0.05;
+          hueRotate = 15;
         } else if (palette === 'cod') {
-          contrast = -0.1;
-          saturation = 0.2;
+          contrast = 0.35;
+          saturation = 0.6;
+          brightnessMin = 0.1;
+          hueRotate = -20;
         } else if (palette === 'smooth') {
-          contrast = 0.1;
-          saturation = 0.15;
+          contrast = 0.25;
+          saturation = 0.45;
+          brightnessMin = 0.0;
+          hueRotate = 35;
         } else if (palette === 'couplet') {
-          contrast = 0.4;
-          saturation = 0.5;
+          contrast = 0.7;
+          saturation = 0.9;
+          brightnessMin = 0.1;
+          hueRotate = 140; // Rotates green/red couplets into ultra-distinct neon
+        } else if (palette === 'custom' && customPalette) {
+          contrast = (customPalette.contrast - 1);
+          saturation = (customPalette.saturate - 1);
+          hueRotate = customPalette.hueRotate;
         }
 
         const beforeId = map.getLayer(LIGHTNING_LAYER_ID)
@@ -517,24 +500,30 @@ export function RadarMap({
           ? NWS_WARNINGS_FILL_ID
           : undefined;
 
-        safeAddLayer(map, {
-          id: RADAR_LAYER_ID,
-          type: 'raster',
-          source: RADAR_SOURCE_ID,
-          paint: {
-            'raster-opacity': 0.88,
-            'raster-contrast': contrast,
-            'raster-saturation': saturation,
-            'raster-fade-duration': 0,
+        safeAddLayer(
+          map,
+          {
+            id: RADAR_LAYER_ID,
+            type: 'raster',
+            source: RADAR_SOURCE_ID,
+            paint: {
+              'raster-opacity': 0.88,
+              'raster-contrast': contrast,
+              'raster-saturation': saturation,
+              'raster-brightness-min': brightnessMin,
+              'raster-hue-rotate': hueRotate,
+              'raster-fade-duration': 0,
+            },
           },
-        }, beforeId);
+          beforeId
+        );
 
         currentTileUrlRef.current = tileUrl;
       } catch (err) {
         console.warn('Radar layer notice:', err);
       }
     },
-    [palette]
+    [palette, customPalette]
   );
 
   // 8. On-Map WeatherWise Radar Tower Pills
@@ -570,7 +559,7 @@ export function RadarMap({
     [radarSite, showRadarPills, onSelectSite]
   );
 
-  // Initialize Map
+  // Initialize Map (SATELLITE ONLY)
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -584,16 +573,17 @@ export function RadarMap({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: makeMapStyle(mapType),
+      style: makeSatelliteStyle(),
       center: [site.lon, site.lat],
-      zoom: 7.2,
+      zoom: 7.4,
       attributionControl: { compact: true },
     });
 
     mapRef.current = map;
 
     setTimeout(() => map.resize(), 100);
-    setTimeout(() => map.resize(), 400);
+    setTimeout(() => map.resize(), 300);
+    setTimeout(() => map.resize(), 600);
 
     map.on('load', () => {
       setMapReady(true);
@@ -633,7 +623,7 @@ export function RadarMap({
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapType]);
+  }, []);
 
   // Update Radar Pills when site changes
   useEffect(() => {
@@ -703,20 +693,40 @@ export function RadarMap({
     installOrUpdateRadarLayer(map, frameUrl);
   }, [frameUrl, frameLabel, mapReady, installOrUpdateRadarLayer]);
 
-  // Fallback radar fetch
+  // -------------------------------------------------------------
+  // FASTSCAN REAL-TIME POLLING ENGINE (8s INTERVAL)
+  // -------------------------------------------------------------
   useEffect(() => {
     if (!mapReady || frameUrl) return;
 
-    fetch(`/api/nexrad/frames?site=${encodeURIComponent(site.radarId)}&product=${encodeURIComponent(product)}`, { cache: 'no-store' })
-      .then((res) => res.json())
-      .then((data) => {
-        const url = data.frames && data.frames.length > 0 ? data.frames[data.frames.length - 1].tileUrl : data.tileUrl;
-        if (url && mapRef.current) {
-          installOrUpdateRadarLayer(mapRef.current, url);
-        }
-      })
-      .catch((err) => console.warn('NEXRAD fetch notice:', err));
-  }, [mapReady, site.radarId, product, frameUrl, installOrUpdateRadarLayer]);
+    let cancelled = false;
+    const pollInterval = fastScan ? 8000 : 60000; // 8s Ultra-Low-Latency vs 1m normal
+
+    const fetchLatestScan = () => {
+      const cacheBuster = `&_cb=${Date.now()}`;
+      fetch(
+        `/api/nexrad/frames?site=${encodeURIComponent(site.radarId)}&product=${encodeURIComponent(product)}${cacheBuster}`,
+        { cache: 'no-store' }
+      )
+        .then((res) => res.json())
+        .then((data) => {
+          if (cancelled) return;
+          const url = data.frames && data.frames.length > 0 ? data.frames[data.frames.length - 1].tileUrl : data.tileUrl;
+          if (url && mapRef.current) {
+            installOrUpdateRadarLayer(mapRef.current, url);
+          }
+        })
+        .catch((err) => console.warn('FastScan fetch notice:', err));
+    };
+
+    fetchLatestScan();
+    const timer = setInterval(fetchLatestScan, pollInterval);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [mapReady, site.radarId, product, frameUrl, fastScan, installOrUpdateRadarLayer]);
 
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}>
