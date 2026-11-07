@@ -10,6 +10,7 @@ import { ActivePlacefile } from './PlacefileManagerModal';
 
 export type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
 export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
+export type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Models' | 'Outlooks';
 
 export type SpotterPin = {
   id: string;
@@ -25,6 +26,7 @@ export type SpotterPin = {
 type RadarMapProps = {
   product: string;
   radarSite?: string;
+  mode?: ModeTab;
   mapType?: MapType;
   palette?: PaletteType;
   palCurve?: ParsedPalCurve | null;
@@ -46,6 +48,15 @@ const MAPTILER_KEY = '4JiuLmexmU5wIex7AETD';
 
 const RADAR_SOURCE_ID = 'mesovortex-nexrad';
 const RADAR_LAYER_ID = 'mesovortex-nexrad-layer';
+
+const COMPOSITE_SOURCE_ID = 'mesovortex-composite';
+const COMPOSITE_LAYER_ID = 'mesovortex-composite-layer';
+
+const SATELLITE_FEED_SOURCE_ID = 'goes-east-satellite';
+const SATELLITE_FEED_LAYER_ID = 'goes-east-satellite-layer';
+
+const MODEL_HRRR_SOURCE_ID = 'hrrr-model';
+const MODEL_HRRR_LAYER_ID = 'hrrr-model-layer';
 
 const LIGHTNING_SOURCE_ID = 'goes-glm-lightning';
 const LIGHTNING_LAYER_ID = 'goes-glm-lightning-layer';
@@ -99,6 +110,7 @@ function makeSatelliteStyle(): StyleSpecification {
 export function RadarMap({
   product,
   radarSite = 'KLZK',
+  mode = 'Radar',
   palette = 'nws',
   palCurve = null,
   activePlacefiles = [],
@@ -139,7 +151,7 @@ export function RadarMap({
     }
   };
 
-  // 1. SPC Outlooks
+  // 1. SPC Convective Outlooks
   const installSPCOutlooks = useCallback((map: MapLibreMap) => {
     fetch('/api/spc/outlooks')
       .then((res) => res.json())
@@ -163,7 +175,7 @@ export function RadarMap({
                 'HIGH', '#ff66ff',
                 'rgba(0,0,0,0)',
               ],
-              'fill-opacity': 0.22,
+              'fill-opacity': mode === 'Outlooks' ? 0.45 : 0.22,
             },
           });
 
@@ -181,18 +193,78 @@ export function RadarMap({
                 'ENH', '#f57c00',
                 'MDT', '#d32f2f',
                 'HIGH', '#aa00ff',
-                'rgba(255,255,255,0.4)',
+                'rgba(255,255,255,0.6)',
               ],
-              'line-width': 1.5,
+              'line-width': mode === 'Outlooks' ? 2.5 : 1.5,
               'line-dasharray': [3, 2],
             },
           });
         }
       })
       .catch((err) => console.warn('SPC notice:', err));
-  }, []);
+  }, [mode]);
 
-  // 2. Watch Boxes
+  // 2. CONUS Composite Radar
+  const installCompositeLayer = useCallback((map: MapLibreMap) => {
+    if (!map.getSource(COMPOSITE_SOURCE_ID)) {
+      map.addSource(COMPOSITE_SOURCE_ID, {
+        type: 'raster',
+        tiles: ['https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: 'IEM CONUS Mosaic',
+      });
+
+      safeAddLayer(map, {
+        id: COMPOSITE_LAYER_ID,
+        type: 'raster',
+        source: COMPOSITE_SOURCE_ID,
+        paint: { 'raster-opacity': 0.88 },
+        layout: { visibility: mode === 'Composite' ? 'visible' : 'none' },
+      });
+    }
+  }, [mode]);
+
+  // 3. GOES Satellite Imagery (Infrared / Visible Clouds)
+  const installSatelliteFeedLayer = useCallback((map: MapLibreMap) => {
+    if (!map.getSource(SATELLITE_FEED_SOURCE_ID)) {
+      map.addSource(SATELLITE_FEED_SOURCE_ID, {
+        type: 'raster',
+        tiles: ['https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-east-vis-1km-900913/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: 'NOAA GOES Satellite',
+      });
+
+      safeAddLayer(map, {
+        id: SATELLITE_FEED_LAYER_ID,
+        type: 'raster',
+        source: SATELLITE_FEED_SOURCE_ID,
+        paint: { 'raster-opacity': 0.75 },
+        layout: { visibility: mode === 'Satellite' ? 'visible' : 'none' },
+      });
+    }
+  }, [mode]);
+
+  // 4. HRRR Numerical Forecast Model (Simulated Radar)
+  const installModelLayer = useCallback((map: MapLibreMap) => {
+    if (!map.getSource(MODEL_HRRR_SOURCE_ID)) {
+      map.addSource(MODEL_HRRR_SOURCE_ID, {
+        type: 'raster',
+        tiles: ['https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/mrms::ReflectivityAtLowestAltitude/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: 'NOAA HRRR / MRMS Model',
+      });
+
+      safeAddLayer(map, {
+        id: MODEL_HRRR_LAYER_ID,
+        type: 'raster',
+        source: MODEL_HRRR_SOURCE_ID,
+        paint: { 'raster-opacity': 0.85 },
+        layout: { visibility: mode === 'Models' ? 'visible' : 'none' },
+      });
+    }
+  }, [mode]);
+
+  // 5. Watch Boxes
   const installWatchesLayer = useCallback((map: MapLibreMap) => {
     fetch('/api/watches')
       .then((res) => res.json())
@@ -239,7 +311,7 @@ export function RadarMap({
       .catch((err) => console.warn('Watches notice:', err));
   }, [showWatches]);
 
-  // 3. Local Storm Reports (LSR)
+  // 6. Local Storm Reports (LSR)
   const installLSRLayer = useCallback((map: MapLibreMap) => {
     fetch('/api/lsr')
       .then((res) => res.json())
@@ -311,7 +383,7 @@ export function RadarMap({
       .catch((err) => console.warn('LSR notice:', err));
   }, [showLSR]);
 
-  // 4. Warnings Polygons
+  // 7. Warnings Polygons
   const installOrUpdateNWSWarnings = useCallback((map: MapLibreMap) => {
     fetch('/api/warnings')
       .then((res) => res.json())
@@ -363,7 +435,7 @@ export function RadarMap({
       .catch((err) => console.warn('Warnings notice:', err));
   }, []);
 
-  // 5. Lightning Layer
+  // 8. Lightning Layer
   const installLightningLayer = useCallback((map: MapLibreMap) => {
     if (map.getSource(LIGHTNING_SOURCE_ID)) return;
 
@@ -383,7 +455,7 @@ export function RadarMap({
     });
   }, [showLightning]);
 
-  // 6. METAR Layer
+  // 9. METAR Layer
   const installMETARLayer = useCallback((map: MapLibreMap) => {
     fetch('/api/metar/geojson')
       .then((res) => res.json())
@@ -449,7 +521,7 @@ export function RadarMap({
       .catch((err) => console.warn('METAR notice:', err));
   }, [showMetars]);
 
-  // 7. Placefiles Renderer
+  // 10. Placefiles Renderer
   const installPlacefiles = useCallback((map: MapLibreMap, placefiles: ActivePlacefile[]) => {
     placefiles.forEach((pf) => {
       const sourceId = `pf-src-${pf.id}`;
@@ -505,7 +577,7 @@ export function RadarMap({
     });
   }, []);
 
-  // 8. RADAR LAYER (Full Dual-Pol CC, ZDR, KDP & Palettes)
+  // 11. Single-Site Radar Layer
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -519,27 +591,23 @@ export function RadarMap({
           tiles: [tileUrl],
           tileSize: 256,
           scheme: 'xyz',
-          attribution: 'NEXRAD Level III & MRMS Dual-Pol',
+          attribution: 'NEXRAD Level III',
         });
 
-        // Dynamic Dual-Pol & Reflectivity Shader curves
         let contrast = 0.15;
         let saturation = 0.3;
         let brightnessMin = 0.0;
         let hueRotate = 0;
 
         if (product === 'cc') {
-          // Correlation Coefficient (Debris Signature Emphasis)
           contrast = 0.65;
           saturation = 0.85;
           hueRotate = -45;
         } else if (product === 'zdr') {
-          // Differential Reflectivity (Hail Size)
           contrast = 0.45;
           saturation = 0.7;
           hueRotate = 90;
         } else if (product === 'kdp') {
-          // Specific Differential Phase (Heavy Rain)
           contrast = 0.5;
           saturation = 0.75;
           hueRotate = 180;
@@ -589,6 +657,9 @@ export function RadarMap({
               'raster-hue-rotate': hueRotate,
               'raster-fade-duration': 0,
             },
+            layout: {
+              visibility: mode === 'Radar' ? 'visible' : 'none',
+            },
           },
           beforeId
         );
@@ -598,10 +669,10 @@ export function RadarMap({
         console.warn('Radar layer update notice:', err);
       }
     },
-    [palette, palCurve, product]
+    [palette, palCurve, product, mode]
   );
 
-  // 9. On-Map WeatherWise Radar Tower Pills
+  // 12. On-Map WeatherWise Radar Tower Pills
   const renderWeatherWiseRadarPills = useCallback(
     (map: MapLibreMap) => {
       siteMarkersRef.current.forEach((m) => m.remove());
@@ -665,6 +736,9 @@ export function RadarMap({
       map.resize();
 
       installSPCOutlooks(map);
+      installCompositeLayer(map);
+      installSatelliteFeedLayer(map);
+      installModelLayer(map);
       installWatchesLayer(map);
       installOrUpdateNWSWarnings(map);
       installLightningLayer(map);
@@ -700,6 +774,50 @@ export function RadarMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 13. Dynamic Mode Switcher Handler (Radar vs Composite vs Satellite vs Models vs Outlooks)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    // Toggle layer visibilities
+    if (map.getLayer(RADAR_LAYER_ID)) {
+      map.setLayoutProperty(RADAR_LAYER_ID, 'visibility', mode === 'Radar' ? 'visible' : 'none');
+    }
+    if (map.getLayer(COMPOSITE_LAYER_ID)) {
+      map.setLayoutProperty(COMPOSITE_LAYER_ID, 'visibility', mode === 'Composite' ? 'visible' : 'none');
+    }
+    if (map.getLayer(SATELLITE_FEED_LAYER_ID)) {
+      map.setLayoutProperty(SATELLITE_FEED_LAYER_ID, 'visibility', mode === 'Satellite' ? 'visible' : 'none');
+    }
+    if (map.getLayer(MODEL_HRRR_LAYER_ID)) {
+      map.setLayoutProperty(MODEL_HRRR_LAYER_ID, 'visibility', mode === 'Models' ? 'visible' : 'none');
+    }
+    if (map.getLayer(SPC_OUTLOOK_FILL_ID)) {
+      map.setPaintProperty(SPC_OUTLOOK_FILL_ID, 'fill-opacity', mode === 'Outlooks' ? 0.45 : 0.22);
+    }
+    if (map.getLayer(SPC_OUTLOOK_LINE_ID)) {
+      map.setPaintProperty(SPC_OUTLOOK_LINE_ID, 'line-width', mode === 'Outlooks' ? 3 : 1.5);
+    }
+
+    // Camera transitions for national modes
+    if (mode === 'Composite' || mode === 'Outlooks' || mode === 'Models' || mode === 'Satellite') {
+      map.flyTo({
+        center: [-98.5, 39.5], // CONUS Center
+        zoom: 4.3,
+        duration: 1200,
+        essential: true,
+      });
+    } else if (mode === 'Radar') {
+      // Zoom into selected radar tower
+      map.flyTo({
+        center: [site.lon, site.lat],
+        zoom: 7.4,
+        duration: 1100,
+        essential: true,
+      });
+    }
+  }, [mode, mapReady, site.lon, site.lat]);
 
   // Update Placefiles
   useEffect(() => {
@@ -753,19 +871,6 @@ export function RadarMap({
       map.setLayoutProperty(WATCHES_LINE_LAYER_ID, 'visibility', visibility);
     }
   }, [showWatches, mapReady]);
-
-  // Fly to site on selection
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
-
-    map.flyTo({
-      center: [site.lon, site.lat],
-      zoom: 7.4,
-      essential: true,
-      duration: 1100,
-    });
-  }, [site.lon, site.lat, mapReady]);
 
   // Radar Frame update
   useEffect(() => {
