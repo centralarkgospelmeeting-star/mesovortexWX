@@ -7,10 +7,10 @@ import { WeatherAssistant } from '../components/WeatherAssistant';
 import { EmergencyAlertTone } from '../components/EmergencyAlertTone';
 import { SynchronizedQuadView } from '../components/SynchronizedQuadView';
 import { SpotterReportModal, SpotterReport } from '../components/SpotterReportModal';
+import { CustomPaletteModal, CustomPalette } from '../components/CustomPaletteModal';
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 
 type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
-type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
 type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Models' | 'Outlooks';
 
 type Frame = {
@@ -24,11 +24,13 @@ export default function MesoVortexWX() {
   // Core state
   const [product, setProduct] = useState<RadarProduct>('ref');
   const [radarSite, setRadarSite] = useState('KLZK');
-  const [mapType, setMapType] = useState<MapType>('street');
   const [activeTab, setActiveTab] = useState<ModeTab>('Radar');
-  const [palette, setPalette] = useState<PaletteType>('nws');
-  const [showAssistant, setShowAssistant] = useState(false);
-  const [showQuad, setShowQuad] = useState(false);
+  const [palette, setPalette] = useState<PaletteType>('radarscope');
+  const [customPalette, setCustomPalette] = useState<CustomPalette | null>(null);
+  const [showPaletteModal, setShowPaletteModal] = useState(false);
+
+  // FastScan Ultra-Low Latency Engine (Active by default!)
+  const [fastScan, setFastScan] = useState(true);
 
   // WeatherWise Layer Toggles
   const [showRadarPills, setShowRadarPills] = useState(true);
@@ -37,6 +39,8 @@ export default function MesoVortexWX() {
   const [showLSR, setShowLSR] = useState(true);
   const [showWatches, setShowWatches] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
+  const [showQuad, setShowQuad] = useState(false);
 
   // Spotter reporting state
   const [spotterCoords, setSpotterCoords] = useState<[number, number] | null>(null);
@@ -61,8 +65,9 @@ export default function MesoVortexWX() {
   const loadFrames = useCallback(async () => {
     setLoopLoading(true);
     try {
+      const cacheBuster = `&_t=${Date.now()}`;
       const res = await fetch(
-        `/api/nexrad/frames?site=${encodeURIComponent(currentSite.radarId)}&product=${encodeURIComponent(product)}&hours=1.5`,
+        `/api/nexrad/frames?site=${encodeURIComponent(currentSite.radarId)}&product=${encodeURIComponent(product)}&hours=1.5${cacheBuster}`,
         { cache: 'no-store' }
       );
       const data = await res.json();
@@ -134,17 +139,19 @@ export default function MesoVortexWX() {
   };
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-[#070c14] text-slate-100 select-none">
-      {/* 1. FULL SCREEN MAP CANVAS */}
+    <div className="relative h-screen w-screen overflow-hidden bg-[#070c14] text-slate-100 select-none">
+      {/* 1. SATELLITE RADAR MAP CANVAS */}
       <div className={`absolute inset-0 ${dualPane ? 'grid grid-cols-2' : ''}`}>
         <div className="relative h-full w-full">
           <RadarMap
             product={product}
             radarSite={radarSite}
-            mapType={mapType}
+            mapType="satellite"
             palette={palette}
+            customPalette={customPalette}
             frameUrl={currentFrame?.tileUrl ?? null}
             frameLabel={currentFrame?.label}
+            fastScan={fastScan}
             showLightning={showLightning}
             showMetars={showMetars}
             showLSR={showLSR}
@@ -160,8 +167,10 @@ export default function MesoVortexWX() {
             <RadarMap
               product={product2}
               radarSite={radarSite}
-              mapType={mapType}
+              mapType="satellite"
               palette={palette}
+              customPalette={customPalette}
+              fastScan={fastScan}
               showLightning={showLightning}
               showMetars={showMetars}
               showLSR={showLSR}
@@ -175,7 +184,7 @@ export default function MesoVortexWX() {
 
       {/* 2. TOP FLOATING PILL BAR (WeatherWise Pro Style) */}
       <header className="pointer-events-none absolute left-0 right-0 top-3 z-30 flex justify-center px-4">
-        <nav aria-label="Mode switcher" className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/15 bg-slate-950/85 p-1.5 shadow-2xl backdrop-blur-xl">
+        <nav aria-label="Mode switcher" className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-950/90 p-1.5 shadow-2xl backdrop-blur-xl">
           <div className="flex items-center gap-2 pl-2 pr-3">
             <Image src="/logo.png" alt="MesoVortex Wx" width={26} height={26} className="rounded-full" priority />
             <span className="hidden text-xs font-black tracking-wider uppercase sm:inline text-white">
@@ -198,13 +207,26 @@ export default function MesoVortexWX() {
               {tab}
             </button>
           ))}
+
+          {/* FastScan Live Pill */}
+          <button
+            onClick={() => setFastScan((f) => !f)}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider transition ${
+              fastScan
+                ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(16,185,129,0.5)]'
+                : 'border border-white/20 bg-slate-900 text-slate-400 hover:text-white'
+            }`}
+            title="FastScan Technology: Sub-minute scan updates"
+          >
+            <span className={`h-2 w-2 rounded-full ${fastScan ? 'bg-slate-950 animate-ping' : 'bg-slate-500'}`} />
+            <span>FastScan</span>
+          </button>
         </nav>
       </header>
 
-      {/* 3. WEATHERWISE TOP-LEFT RADAR HUD & PRODUCT PILLS */}
+      {/* 3. TOP-LEFT RADAR HUD & PRODUCT PILLS */}
       <div className="pointer-events-none absolute left-4 top-16 z-20 flex flex-col gap-2">
-        {/* Radar Info Pill */}
-        <div className="pointer-events-auto flex items-center gap-2.5 rounded-2xl border border-white/15 bg-slate-950/85 px-3.5 py-2 shadow-2xl backdrop-blur-xl">
+        <div className="pointer-events-auto flex items-center gap-2.5 rounded-2xl border border-white/15 bg-slate-950/90 px-3.5 py-2 shadow-2xl backdrop-blur-xl">
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
@@ -216,13 +238,13 @@ export default function MesoVortexWX() {
               <span>•</span>
               <span>Tilt 0.5°</span>
               <span>•</span>
-              <span className="text-amber-400 font-semibold">VCP 212</span>
+              <span className="text-amber-400 font-semibold">{fastScan ? '⚡ FastScan 8s' : 'VCP 212'}</span>
             </div>
           </div>
         </div>
 
-        {/* On-Map Radar Product Switcher Pills */}
-        <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-slate-950/80 p-1 shadow-xl backdrop-blur-lg">
+        {/* Product Switcher Pills */}
+        <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-slate-950/85 p-1 shadow-xl backdrop-blur-lg">
           {RADAR_PRODUCTS.map((p) => {
             const active = product === p.key;
             return (
@@ -242,7 +264,7 @@ export default function MesoVortexWX() {
         </div>
       </div>
 
-      {/* 4. WEATHERWISE RIGHT-HAND FLOATING ACTION DOCK */}
+      {/* 4. RIGHT-HAND FLOATING ACTION DOCK */}
       <div className="absolute right-4 top-16 z-20 flex flex-col gap-2">
         <button
           onClick={() => setShowLightning((v) => !v)}
@@ -315,10 +337,18 @@ export default function MesoVortexWX() {
         >
           ▦
         </button>
+        {/* Custom Palette Creator Button */}
+        <button
+          onClick={() => setShowPaletteModal(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-500/40 bg-amber-600/20 text-amber-300 shadow-xl backdrop-blur-xl hover:bg-amber-600/30"
+          title="Create Custom Color Palette"
+        >
+          🎨
+        </button>
         <button
           onClick={() => setSettingsOpen((v) => !v)}
           className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-slate-950/85 text-slate-300 shadow-xl backdrop-blur-xl hover:bg-slate-900 hover:text-white"
-          title="Color Palettes & Customizations"
+          title="Palettes & Settings"
         >
           ⚙
         </button>
@@ -331,10 +361,9 @@ export default function MesoVortexWX() {
         </button>
       </div>
 
-      {/* 5. WEATHERWISE PRO BOTTOM FLOATING PLAYER BAR */}
+      {/* 5. FLOATING PLAYER BAR */}
       <footer className="pointer-events-none absolute bottom-9 left-0 right-0 z-20 flex justify-center px-4">
         <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/15 bg-slate-950/90 px-4 py-2 shadow-2xl backdrop-blur-2xl">
-          {/* Step Back */}
           <button
             onClick={() => stepFrame(-1)}
             className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 hover:bg-white/10"
@@ -342,8 +371,6 @@ export default function MesoVortexWX() {
           >
             ‹
           </button>
-
-          {/* Play/Pause */}
           <button
             onClick={() => setIsPlaying((p) => !p)}
             disabled={frames.length < 2}
@@ -352,8 +379,6 @@ export default function MesoVortexWX() {
           >
             {isPlaying ? '❚❚' : '▶'}
           </button>
-
-          {/* Step Forward */}
           <button
             onClick={() => stepFrame(1)}
             className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 hover:bg-white/10"
@@ -362,7 +387,6 @@ export default function MesoVortexWX() {
             ›
           </button>
 
-          {/* Timeline Scrubber */}
           <div className="flex items-center gap-2 px-1">
             <input
               type="range"
@@ -377,12 +401,10 @@ export default function MesoVortexWX() {
             />
           </div>
 
-          {/* Timestamp Badge */}
           <span className="font-mono text-xs font-bold text-slate-200 min-w-[50px] text-center">
             {loopLoading ? '...' : currentFrame?.label || 'LIVE'}
           </span>
 
-          {/* Jump to LIVE Pill */}
           <button
             onClick={goToLive}
             className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider transition ${
@@ -396,7 +418,7 @@ export default function MesoVortexWX() {
         </div>
       </footer>
 
-      {/* 6. STREAMLINED BOTTOM LEGEND SCALE BAR */}
+      {/* 6. DYNAMIC REFLECTIVITY LEGEND SCALE */}
       <aside aria-label="Reflectivity legend" className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 flex h-6 items-center justify-between border-t border-white/10 bg-slate-950/90 px-4 text-[9px] font-mono backdrop-blur-md">
         <span className="font-bold text-slate-400">dBZ:</span>
         <div className="mx-3 flex-1 h-2 rounded-full overflow-hidden flex border border-white/10">
@@ -418,50 +440,46 @@ export default function MesoVortexWX() {
         <span className="text-slate-400">5 • 15 • 30 • 45 • 60 • 70+</span>
       </aside>
 
-      {/* 7. SETTINGS & COLOR PALETTES POPUP */}
+      {/* 7. SETTINGS & PALETTE SWITCHER */}
       {settingsOpen && (
         <div className="absolute right-16 top-16 z-30 w-72 rounded-2xl border border-white/15 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-2xl">
           <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-white">Display &amp; Palettes</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-white">Palettes &amp; Layers</span>
             <button onClick={() => setSettingsOpen(false)} className="text-slate-400 hover:text-white">✕</button>
           </div>
 
           <div className="space-y-3.5 text-xs">
             <div>
-              <div className="mb-1.5 font-bold text-cyan-300">Radar Color Palettes</div>
+              <div className="mb-1.5 flex items-center justify-between font-bold text-cyan-300">
+                <span>Radar Color Palettes</span>
+                <button
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setShowPaletteModal(true);
+                  }}
+                  className="text-[10px] text-amber-400 underline hover:text-amber-300"
+                >
+                  + Create Custom
+                </button>
+              </div>
+
               <div className="grid grid-cols-2 gap-1.5">
                 {[
-                  { key: 'nws', label: 'NWS Classic' },
                   { key: 'radarscope', label: 'RadarScope' },
+                  { key: 'nws', label: 'NWS Classic' },
                   { key: 'cod', label: 'COD Pastels' },
                   { key: 'smooth', label: 'DG Noah' },
                   { key: 'couplet', label: 'Couplet' },
+                  ...(customPalette ? [{ key: 'custom', label: customPalette.name }] : []),
                 ].map((p) => (
                   <button
                     key={p.key}
                     onClick={() => setPalette(p.key as PaletteType)}
                     className={`rounded-lg py-1 px-2 text-left text-[11px] font-bold transition ${
-                      palette === p.key ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                      palette === p.key ? 'bg-cyan-600 text-white shadow-md' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
                     {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-1 font-bold text-slate-300">Basemap Style</div>
-              <div className="grid grid-cols-3 gap-1">
-                {(['street', 'satellite', 'terrain'] as MapType[]).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setMapType(t)}
-                    className={`rounded py-1 text-[10px] font-bold uppercase ${
-                      mapType === t ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
-                    }`}
-                  >
-                    {t}
                   </button>
                 ))}
               </div>
@@ -480,7 +498,18 @@ export default function MesoVortexWX() {
         </div>
       )}
 
-      {/* 8. AI ASSISTANT MODAL */}
+      {/* 8. CUSTOM PALETTE CREATOR MODAL */}
+      {showPaletteModal && (
+        <CustomPaletteModal
+          onClose={() => setShowPaletteModal(false)}
+          onSavePalette={(cp) => {
+            setCustomPalette(cp);
+            setPalette('custom');
+          }}
+        />
+      )}
+
+      {/* 9. AI ASSISTANT MODAL */}
       {showAssistant && (
         <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
           <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
@@ -492,10 +521,10 @@ export default function MesoVortexWX() {
         </div>
       )}
 
-      {/* 9. QUAD SYNCHRO VIEW MODAL */}
+      {/* 10. QUAD SYNCHRO VIEW MODAL */}
       {showQuad && <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowQuad(false)} />}
 
-      {/* 10. SPOTTER REPORT MODAL */}
+      {/* 11. SPOTTER REPORT MODAL */}
       {spotterCoords && (
         <SpotterReportModal
           currentCoords={spotterCoords}
@@ -504,7 +533,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 11. EMERGENCY SIREN AUDIO ENGINE */}
+      {/* 12. EMERGENCY SIREN AUDIO ENGINE */}
       <EmergencyAlertTone />
     </div>
   );
