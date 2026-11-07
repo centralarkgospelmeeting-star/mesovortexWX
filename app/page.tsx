@@ -7,7 +7,8 @@ import { WeatherAssistant } from '../components/WeatherAssistant';
 import { EmergencyAlertTone } from '../components/EmergencyAlertTone';
 import { SynchronizedQuadView } from '../components/SynchronizedQuadView';
 import { SpotterReportModal, SpotterReport } from '../components/SpotterReportModal';
-import { CustomPaletteModal, CustomPalette } from '../components/CustomPaletteModal';
+import { PalColorTableModal, ParsedPalCurve } from '../components/PalColorTableModal';
+import { PlacefileManagerModal, ActivePlacefile } from '../components/PlacefileManagerModal';
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 
 type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
@@ -26,13 +27,32 @@ export default function MesoVortexWX() {
   const [radarSite, setRadarSite] = useState('KLZK');
   const [activeTab, setActiveTab] = useState<ModeTab>('Radar');
   const [palette, setPalette] = useState<PaletteType>('radarscope');
-  const [customPalette, setCustomPalette] = useState<CustomPalette | null>(null);
-  const [showPaletteModal, setShowPaletteModal] = useState(false);
 
-  // FastScan Ultra-Low Latency Engine (Active by default!)
+  // Gibson Ridge .pal Curve State
+  const [palCurve, setPalCurve] = useState<ParsedPalCurve | null>(null);
+  const [showPalModal, setShowPalModal] = useState(false);
+
+  // Gibson Ridge Placefiles State (Preloads PlacefileNation & FreeLightning)
+  const [showPlacefileModal, setShowPlacefileModal] = useState(false);
+  const [placefiles, setPlacefiles] = useState<ActivePlacefile[]>([
+    {
+      id: 'pfn-metars',
+      name: 'PlacefileNation METARs',
+      url: 'http://placefilenation.com/Placefiles/metars.php',
+      enabled: true,
+    },
+    {
+      id: 'free-lightning',
+      name: 'FreeLightning Strike Feed',
+      url: 'https://www.freelightning.com/hub/placefile.php?request=10462|10821|12602186|10262|10322|10733|0|84764|1',
+      enabled: true,
+    },
+  ]);
+
+  // FastScan Ultra-Low Latency Engine
   const [fastScan, setFastScan] = useState(true);
 
-  // WeatherWise Layer Toggles
+  // Layer Toggles
   const [showRadarPills, setShowRadarPills] = useState(true);
   const [showLightning, setShowLightning] = useState(true);
   const [showMetars, setShowMetars] = useState(false);
@@ -138,6 +158,26 @@ export default function MesoVortexWX() {
     setSpotterCoords(null);
   };
 
+  const handleTogglePlacefile = (id: string) => {
+    setPlacefiles((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p))
+    );
+  };
+
+  const handleAddPlacefile = (name: string, url: string) => {
+    const newPf: ActivePlacefile = {
+      id: `pf-${Date.now()}`,
+      name,
+      url,
+      enabled: true,
+    };
+    setPlacefiles((prev) => [...prev, newPf]);
+  };
+
+  const handleDeletePlacefile = (id: string) => {
+    setPlacefiles((prev) => prev.filter((p) => p.id !== id));
+  };
+
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#070c14] text-slate-100 select-none">
       {/* 1. SATELLITE RADAR MAP CANVAS */}
@@ -148,7 +188,8 @@ export default function MesoVortexWX() {
             radarSite={radarSite}
             mapType="satellite"
             palette={palette}
-            customPalette={customPalette}
+            palCurve={palCurve}
+            activePlacefiles={placefiles}
             frameUrl={currentFrame?.tileUrl ?? null}
             frameLabel={currentFrame?.label}
             fastScan={fastScan}
@@ -169,7 +210,8 @@ export default function MesoVortexWX() {
               radarSite={radarSite}
               mapType="satellite"
               palette={palette}
-              customPalette={customPalette}
+              palCurve={palCurve}
+              activePlacefiles={placefiles}
               fastScan={fastScan}
               showLightning={showLightning}
               showMetars={showMetars}
@@ -266,6 +308,24 @@ export default function MesoVortexWX() {
 
       {/* 4. RIGHT-HAND FLOATING ACTION DOCK */}
       <div className="absolute right-4 top-16 z-20 flex flex-col gap-2">
+        {/* Gibson Ridge Placefile Manager Button */}
+        <button
+          onClick={() => setShowPlacefileModal(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition"
+          title="Gibson Ridge Placefile Manager (METARs / FreeLightning)"
+        >
+          📡
+        </button>
+
+        {/* Gibson Ridge .pal Color Table Loader Button */}
+        <button
+          onClick={() => setShowPalModal(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-600/30 text-amber-200 shadow-xl backdrop-blur-xl hover:bg-amber-600/50 transition"
+          title="Load Gibson Ridge (.pal) Color Table File"
+        >
+          📁
+        </button>
+
         <button
           onClick={() => setShowLightning((v) => !v)}
           className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
@@ -319,7 +379,7 @@ export default function MesoVortexWX() {
           }`}
           title="Toggle On-Map Radar Tower Pills"
         >
-          📡
+          🛰️
         </button>
         <button
           onClick={() => setShowQuad(true)}
@@ -336,14 +396,6 @@ export default function MesoVortexWX() {
           title="Split Dual View"
         >
           ▦
-        </button>
-        {/* Custom Palette Creator Button */}
-        <button
-          onClick={() => setShowPaletteModal(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-500/40 bg-amber-600/20 text-amber-300 shadow-xl backdrop-blur-xl hover:bg-amber-600/30"
-          title="Create Custom Color Palette"
-        >
-          🎨
         </button>
         <button
           onClick={() => setSettingsOpen((v) => !v)}
@@ -455,11 +507,11 @@ export default function MesoVortexWX() {
                 <button
                   onClick={() => {
                     setSettingsOpen(false);
-                    setShowPaletteModal(true);
+                    setShowPalModal(true);
                   }}
                   className="text-[10px] text-amber-400 underline hover:text-amber-300"
                 >
-                  + Create Custom
+                  + Load .pal File
                 </button>
               </div>
 
@@ -470,7 +522,7 @@ export default function MesoVortexWX() {
                   { key: 'cod', label: 'COD Pastels' },
                   { key: 'smooth', label: 'DG Noah' },
                   { key: 'couplet', label: 'Couplet' },
-                  ...(customPalette ? [{ key: 'custom', label: customPalette.name }] : []),
+                  ...(palCurve ? [{ key: 'palFile', label: palCurve.name.slice(0, 10) }] : []),
                 ].map((p) => (
                   <button
                     key={p.key}
@@ -498,18 +550,29 @@ export default function MesoVortexWX() {
         </div>
       )}
 
-      {/* 8. CUSTOM PALETTE CREATOR MODAL */}
-      {showPaletteModal && (
-        <CustomPaletteModal
-          onClose={() => setShowPaletteModal(false)}
-          onSavePalette={(cp) => {
-            setCustomPalette(cp);
-            setPalette('custom');
+      {/* 8. GIBSON RIDGE (.pal) MODAL */}
+      {showPalModal && (
+        <PalColorTableModal
+          onClose={() => setShowPalModal(false)}
+          onApplyPal={(parsed) => {
+            setPalCurve(parsed);
+            setPalette('palFile');
           }}
         />
       )}
 
-      {/* 9. AI ASSISTANT MODAL */}
+      {/* 9. PLACEFILE MANAGER MODAL */}
+      {showPlacefileModal && (
+        <PlacefileManagerModal
+          placefiles={placefiles}
+          onClose={() => setShowPlacefileModal(false)}
+          onToggle={handleTogglePlacefile}
+          onAdd={handleAddPlacefile}
+          onDelete={handleDeletePlacefile}
+        />
+      )}
+
+      {/* 10. AI ASSISTANT MODAL */}
       {showAssistant && (
         <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
           <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
@@ -521,10 +584,10 @@ export default function MesoVortexWX() {
         </div>
       )}
 
-      {/* 10. QUAD SYNCHRO VIEW MODAL */}
+      {/* 11. QUAD SYNCHRO VIEW MODAL */}
       {showQuad && <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowQuad(false)} />}
 
-      {/* 11. SPOTTER REPORT MODAL */}
+      {/* 12. SPOTTER REPORT MODAL */}
       {spotterCoords && (
         <SpotterReportModal
           currentCoords={spotterCoords}
@@ -533,7 +596,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 12. EMERGENCY SIREN AUDIO ENGINE */}
+      {/* 13. EMERGENCY SIREN AUDIO ENGINE */}
       <EmergencyAlertTone />
     </div>
   );
