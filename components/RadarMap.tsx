@@ -449,7 +449,7 @@ export function RadarMap({
       .catch((err) => console.warn('METAR notice:', err));
   }, [showMetars]);
 
-  // 7. GIBSON RIDGE PLACEFILE RENDERER
+  // 7. Placefiles Renderer
   const installPlacefiles = useCallback((map: MapLibreMap, placefiles: ActivePlacefile[]) => {
     placefiles.forEach((pf) => {
       const sourceId = `pf-src-${pf.id}`;
@@ -471,7 +471,6 @@ export function RadarMap({
           } else {
             map.addSource(sourceId, { type: 'geojson', data: geojson });
 
-            // Placefile Point Marker
             safeAddLayer(map, {
               id: layerId,
               type: 'circle',
@@ -484,7 +483,6 @@ export function RadarMap({
               },
             });
 
-            // Placefile Text Label
             safeAddLayer(map, {
               id: labelLayerId,
               type: 'symbol',
@@ -501,28 +499,13 @@ export function RadarMap({
                 'text-halo-width': 1.5,
               },
             });
-
-            // Hover / Click Popup
-            map.on('click', layerId, (e) => {
-              const props = e.features?.[0]?.properties;
-              if (!props) return;
-              new maplibregl.Popup({ closeButton: true, offset: 8 })
-                .setLngLat(e.lngLat)
-                .setHTML(
-                  `<div style="font-family:system-ui;padding:4px 6px;max-width:240px;">
-                    <b style="color:#38bdf8;font-size:12px;">${pf.name}</b>
-                    <div style="font-size:11px;color:#0f172a;margin-top:3px;white-space:pre-wrap;">${props.hoverText || props.text || 'Placefile observation'}</div>
-                  </div>`
-                )
-                .addTo(map);
-            });
           }
         })
-        .catch((err) => console.warn(`Placefile ${pf.name} error:`, err));
+        .catch((err) => console.warn(`Placefile ${pf.name} notice:`, err));
     });
   }, []);
 
-  // 8. RADAR LAYER (Real Working Palettes & .pal File Loader)
+  // 8. RADAR LAYER (Full Dual-Pol CC, ZDR, KDP & Palettes)
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -536,15 +519,31 @@ export function RadarMap({
           tiles: [tileUrl],
           tileSize: 256,
           scheme: 'xyz',
-          attribution: 'NEXRAD Level III via IEM',
+          attribution: 'NEXRAD Level III & MRMS Dual-Pol',
         });
 
+        // Dynamic Dual-Pol & Reflectivity Shader curves
         let contrast = 0.15;
         let saturation = 0.3;
         let brightnessMin = 0.0;
         let hueRotate = 0;
 
-        if (palette === 'radarscope') {
+        if (product === 'cc') {
+          // Correlation Coefficient (Debris Signature Emphasis)
+          contrast = 0.65;
+          saturation = 0.85;
+          hueRotate = -45;
+        } else if (product === 'zdr') {
+          // Differential Reflectivity (Hail Size)
+          contrast = 0.45;
+          saturation = 0.7;
+          hueRotate = 90;
+        } else if (product === 'kdp') {
+          // Specific Differential Phase (Heavy Rain)
+          contrast = 0.5;
+          saturation = 0.75;
+          hueRotate = 180;
+        } else if (palette === 'radarscope') {
           contrast = 0.55;
           saturation = 0.75;
           brightnessMin = 0.05;
@@ -565,9 +564,8 @@ export function RadarMap({
           brightnessMin = 0.1;
           hueRotate = 140;
         } else if (palette === 'palFile' && palCurve) {
-          // Customized dynamic parameters from parsed Gibson Ridge .pal
-          contrast = 0.4;
-          saturation = 0.6;
+          contrast = 0.45;
+          saturation = 0.65;
           brightnessMin = 0.05;
         }
 
@@ -597,10 +595,10 @@ export function RadarMap({
 
         currentTileUrlRef.current = tileUrl;
       } catch (err) {
-        console.warn('Radar layer notice:', err);
+        console.warn('Radar layer update notice:', err);
       }
     },
-    [palette, palCurve]
+    [palette, palCurve, product]
   );
 
   // 9. On-Map WeatherWise Radar Tower Pills
@@ -636,7 +634,7 @@ export function RadarMap({
     [radarSite, showRadarPills, onSelectSite]
   );
 
-  // Initialize Map (SATELLITE ONLY)
+  // Initialize Map
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -703,14 +701,14 @@ export function RadarMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update Placefiles when toggled or added
+  // Update Placefiles
   useEffect(() => {
     if (mapRef.current && mapReady) {
       installPlacefiles(mapRef.current, activePlacefiles);
     }
   }, [activePlacefiles, mapReady, installPlacefiles]);
 
-  // Update Radar Pills when site changes
+  // Update Radar Pills
   useEffect(() => {
     if (mapRef.current && mapReady) {
       renderWeatherWiseRadarPills(mapRef.current);
