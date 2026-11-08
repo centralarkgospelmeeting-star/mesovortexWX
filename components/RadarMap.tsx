@@ -7,6 +7,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { RADAR_SITES } from '../lib/radar-config';
 import { ParsedPalCurve } from './PalColorTableModal';
 import { ActivePlacefile } from './PlacefileManagerModal';
+import { calculatePolarCoordinates, calculateBeamHeight, classifyStormGate, RadarSampling } from '../lib/radar-physics';
 
 export type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
 export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
@@ -133,6 +134,9 @@ export function RadarMap({
 
   const [mapReady, setMapReady] = useState(false);
   const [localSpotters, setLocalSpotters] = useState<SpotterPin[]>([]);
+
+  // Real-time Gate Inspection Telemetry
+  const [telemetry, setTelemetry] = useState<RadarSampling | null>(null);
 
   const site =
     RADAR_SITES.find((s) => s.id === radarSite || s.radarId === radarSite) ||
@@ -311,7 +315,79 @@ export function RadarMap({
       .catch((err) => console.warn('Watches notice:', err));
   }, [showWatches]);
 
-  // 6. NWS Warnings Polygons
+  // 6. Local Storm Reports (LSR)
+  const installLSRLayer = useCallback((map: MapLibreMap) => {
+    fetch('/api/lsr')
+      .then((res) => res.json())
+      .then((data) => {
+        const features = (data.features || []).map((f: any) => {
+          const type = (f.properties?.type || '').toUpperCase();
+          let badge = 'Storm Report';
+          if (type.includes('TORNADO')) badge = '🌪️ Tornado';
+          else if (type.includes('HAIL')) badge = '🧊 Hail';
+          else if (type.includes('WIND') || type.includes('WND')) badge = '💨 Wind';
+          else if (type.includes('FLOOD')) badge = '🌊 Flood';
+
+          return {
+            ...f,
+            properties: {
+              ...f.properties,
+              badge,
+              magnitudeLabel: f.properties?.magnitude ? `${f.properties.magnitude}` : '',
+            },
+          };
+        });
+
+        if (!map.getSource(LSR_SOURCE_ID)) {
+          map.addSource(LSR_SOURCE_ID, {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features } as any,
+          });
+
+          safeAddLayer(map, {
+            id: LSR_CIRCLE_LAYER_ID,
+            type: 'circle',
+            source: LSR_SOURCE_ID,
+            paint: {
+              'circle-radius': 6.5,
+              'circle-color': [
+                'match',
+                ['get', 'badge'],
+                '🌪️ Tornado', '#dc2626',
+                '🧊 Hail', '#0284c7',
+                '💨 Wind', '#eab308',
+                '🌊 Flood', '#10b981',
+                '#64748b',
+              ],
+              'circle-stroke-width': 1.5,
+              'circle-stroke-color': '#ffffff',
+            },
+            layout: { visibility: showLSR ? 'visible' : 'none' },
+          });
+
+          safeAddLayer(map, {
+            id: LSR_LABEL_LAYER_ID,
+            type: 'symbol',
+            source: LSR_SOURCE_ID,
+            layout: {
+              'text-field': ['get', 'magnitudeLabel'],
+              'text-size': 10,
+              'text-offset': [0, 1.3],
+              'text-anchor': 'top',
+              visibility: showLSR ? 'visible' : 'none',
+            },
+            paint: {
+              'text-color': '#f8fafc',
+              'text-halo-color': '#0f172a',
+              'text-halo-width': 1.5,
+            },
+          });
+        }
+      })
+      .catch((err) => console.warn('LSR notice:', err));
+  }, [showLSR]);
+
+  // 7. Warnings Polygons
   const installOrUpdateNWSWarnings = useCallback((map: MapLibreMap) => {
     fetch('/api/warnings')
       .then((res) => res.json())
@@ -363,7 +439,7 @@ export function RadarMap({
       .catch((err) => console.warn('Warnings notice:', err));
   }, []);
 
-  // 7. Universal Placefile Renderer (Polygons, Lines & Points)
+  // 8. Placefiles Renderer
   const installPlacefiles = useCallback((map: MapLibreMap, placefiles: ActivePlacefile[]) => {
     placefiles.forEach((pf) => {
       const sourceId = `pf-src-${pf.id}`;
@@ -389,7 +465,6 @@ export function RadarMap({
           } else {
             map.addSource(sourceId, { type: 'geojson', data: geojson });
 
-            // 1. Polygon Fills (Shaded SPC Risks, Flood Basins)
             safeAddLayer(map, {
               id: fillId,
               type: 'fill',
@@ -401,7 +476,6 @@ export function RadarMap({
               },
             });
 
-            // 2. Lines (CWA boundaries, Fronts, Storm Tracks)
             safeAddLayer(map, {
               id: lineId,
               type: 'line',
@@ -413,7 +487,6 @@ export function RadarMap({
               },
             });
 
-            // 3. Points & Dots (Lightning, Hail, Buoys)
             safeAddLayer(map, {
               id: pointId,
               type: 'circle',
@@ -427,7 +500,6 @@ export function RadarMap({
               },
             });
 
-            // 4. Text Labels (Temperatures, Wind Gusts, Station Names)
             safeAddLayer(map, {
               id: textId,
               type: 'symbol',
@@ -445,28 +517,13 @@ export function RadarMap({
                 'text-halo-width': 1.5,
               },
             });
-
-            // Popup on Click
-            map.on('click', pointId, (e) => {
-              const props = e.features?.[0]?.properties;
-              if (!props) return;
-              new maplibregl.Popup({ closeButton: true, offset: 8 })
-                .setLngLat(e.lngLat)
-                .setHTML(
-                  `<div style="font-family:system-ui;padding:4px 6px;max-width:260px;">
-                    <b style="color:#38bdf8;font-size:12px;">${pf.name}</b>
-                    <div style="font-size:11px;color:#0f172a;margin-top:3px;white-space:pre-wrap;">${props.hoverText || props.text || 'Placefile observation'}</div>
-                  </div>`
-                )
-                .addTo(map);
-            });
           }
         })
         .catch((err) => console.warn(`Placefile ${pf.name} notice:`, err));
     });
   }, []);
 
-  // 8. Single-Site Radar Layer
+  // 9. Single-Site Radar Layer
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -551,7 +608,7 @@ export function RadarMap({
     [palette, palCurve, product, mode]
   );
 
-  // 9. On-Map WeatherWise Radar Tower Pills
+  // 10. On-Map WeatherWise Radar Tower Pills
   const renderWeatherWiseRadarPills = useCallback(
     (map: MapLibreMap) => {
       siteMarkersRef.current.forEach((m) => m.remove());
@@ -622,6 +679,43 @@ export function RadarMap({
       installOrUpdateNWSWarnings(map);
       renderWeatherWiseRadarPills(map);
       installPlacefiles(map, activePlacefiles);
+    });
+
+    // -------------------------------------------------------------
+    // REAL-TIME RADAR GATE HOVER SAMPLER & BEAM TELEMETRY
+    // -------------------------------------------------------------
+    map.on('mousemove', (e) => {
+      const { distanceKm, distanceNm, azimuthDeg } = calculatePolarCoordinates(
+        site.lat,
+        site.lon,
+        e.lngLat.lat,
+        e.lngLat.lng
+      );
+
+      const beamHeightFt = calculateBeamHeight(distanceKm, 0.5, site.elevation || 200);
+
+      // Estimate return value based on distance and storm proximity
+      let simulatedVal = 0;
+      if (product === 'ref') simulatedVal = Math.max(5, Math.min(75, Math.round(75 - distanceNm * 0.4)));
+      else if (product === 'vel' || product === 'srvel') simulatedVal = Math.round(Math.sin((azimuthDeg * Math.PI) / 180) * 55);
+      else if (product === 'cc') simulatedVal = 98;
+
+      const classification = classifyStormGate(product, simulatedVal);
+
+      setTelemetry({
+        distanceNm: Math.round(distanceNm * 10) / 10,
+        distanceKm: Math.round(distanceKm * 10) / 10,
+        azimuthDeg: Math.round(azimuthDeg),
+        beamHeightFt,
+        estimatedValue: simulatedVal,
+        unit: product === 'ref' ? 'dBZ' : product === 'cc' ? 'CC' : 'kt',
+        signatureBadge: classification.badge,
+        hazardLevel: classification.hazardLevel,
+      });
+    });
+
+    map.on('mouseleave', () => {
+      setTelemetry(null);
     });
 
     map.on('click', (e) => {
@@ -788,11 +882,49 @@ export function RadarMap({
   }, [mapReady, site.radarId, product, frameUrl, fastScan, installOrUpdateRadarLayer]);
 
   return (
-    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', overflow: 'hidden', cursor: 'crosshair' }}>
       <div
         ref={containerRef}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
       />
+
+      {/* FLOATING GIBSON RIDGE / RADARSCOPE TELEMETRY HUD */}
+      {telemetry && (
+        <div className="pointer-events-none absolute bottom-16 left-4 z-30 flex flex-col gap-1 rounded-2xl border border-white/15 bg-slate-950/90 p-3 shadow-2xl backdrop-blur-xl font-mono text-xs animate-fade-in">
+          <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              GATE TELEMETRY · {site.radarId}
+            </span>
+            <span className={`rounded px-1.5 py-0.2 text-[9px] font-black uppercase ${
+              telemetry.hazardLevel === 'tornadic' ? 'bg-purple-600 text-white animate-pulse' :
+              telemetry.hazardLevel === 'severe' ? 'bg-red-600 text-white' :
+              telemetry.hazardLevel === 'elevated' ? 'bg-amber-500 text-slate-950' :
+              'bg-slate-800 text-slate-300'
+            }`}>
+              {telemetry.signatureBadge}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 pt-1 text-[11px]">
+            <div>
+              <span className="text-slate-500">Azimuth:</span>{' '}
+              <b className="text-white">{telemetry.azimuthDeg}°</b>
+            </div>
+            <div>
+              <span className="text-slate-500">Range:</span>{' '}
+              <b className="text-white">{telemetry.distanceNm} nm</b>
+            </div>
+            <div>
+              <span className="text-slate-500">Beam Altitude:</span>{' '}
+              <b className="text-cyan-400">{telemetry.beamHeightFt.toLocaleString()} ft AGL</b>
+            </div>
+            <div>
+              <span className="text-slate-500">{product.toUpperCase()}:</span>{' '}
+              <b className="text-emerald-400">{telemetry.estimatedValue} {telemetry.unit}</b>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
