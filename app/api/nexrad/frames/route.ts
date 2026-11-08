@@ -18,34 +18,42 @@ export async function GET(request: Request) {
   let productCode = 'N0B';
   let tileUrl = '';
 
-  // 1. Multi-Tilt Reflectivity Routing (VCP Elevation Cuts)
-  if (productKey === 'ref') {
+  // 1. NOAA MRMS Algorithmic Severe Products
+  if (productKey === 'mesh') {
+    productCode = 'MESH';
+    // Maximum Estimated Size of Hail (accumulation swath)
+    tileUrl = `${IEM_TILE}/mrms::MESH_Max60min/{z}/{x}/{y}.png`;
+  } else if (productKey === 'azshear') {
+    productCode = 'AZSHEAR';
+    // Low-Level Azimuthal Shear (Rotation Tracks / Tornado paths)
+    tileUrl = `${IEM_TILE}/mrms::AzShear_0-2km/{z}/{x}/{y}.png`;
+  }
+  // 2. Multi-Tilt Reflectivity
+  else if (productKey === 'ref') {
     if (tilt === '0.9') productCode = 'N1B';
     else if (tilt === '1.3') productCode = 'N2B';
     else if (tilt === '1.8') productCode = 'N3B';
-    else productCode = 'N0B'; // 0.5°
+    else productCode = 'N0B';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
   }
-  // 2. Multi-Tilt Velocity Routing
+  // 3. Multi-Tilt Velocity
   else if (productKey === 'vel') {
     if (tilt === '0.9') productCode = 'N1U';
     else if (tilt === '1.3') productCode = 'N2U';
     else if (tilt === '1.8') productCode = 'N3U';
-    else productCode = 'N0U'; // 0.5°
+    else productCode = 'N0U';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
   }
-  // 3. Storm Relative Motion (SRM)
+  // 4. Storm Relative Motion (SRM)
   else if (productKey === 'srvel') {
     productCode = 'N0S';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0S-0/{z}/{x}/{y}.png`;
   }
-  // 4. Digital Echo Tops (Max thunderstorm cloud height)
+  // 5. Echo Tops & VIL
   else if (productKey === 'tops') {
     productCode = 'EET';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-EET-0/{z}/{x}/{y}.png`;
-  }
-  // 5. Digital Vertically Integrated Liquid (Hail Mass)
-  else if (productKey === 'vil') {
+  } else if (productKey === 'vil') {
     productCode = 'DVL';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-DVL-0/{z}/{x}/{y}.png`;
   }
@@ -79,7 +87,7 @@ export async function GET(request: Request) {
     const ageMinutes = Math.round((now.getTime() - date.getTime()) / 60000);
 
     let frameTile = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-${stamp}/{z}/{x}/{y}.png`;
-    if (productKey === 'cc' || productKey === 'zdr' || productKey === 'kdp') {
+    if (productKey === 'mesh' || productKey === 'azshear' || productKey === 'cc' || productKey === 'zdr' || productKey === 'kdp') {
       frameTile = tileUrl;
     }
 
@@ -100,7 +108,7 @@ export async function GET(request: Request) {
 
   return Response.json(
     {
-      source: 'IEM Multi-Tilt Level III Ingest',
+      source: 'IEM & NOAA MRMS Severe Ingest',
       station: site.radarId,
       siteId: site.id,
       product: productCode,
