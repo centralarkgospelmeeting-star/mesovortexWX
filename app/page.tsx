@@ -12,7 +12,7 @@ import { PlacefileManagerModal, ActivePlacefile } from '../components/PlacefileM
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 import { PLACEFILE_NATION_CATALOG } from '../lib/placefile-catalog';
 
-type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
+type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp' | 'tops' | 'vil';
 
 type Frame = {
   time: string;
@@ -21,18 +21,21 @@ type Frame = {
   ageMinutes: number;
 };
 
+const VCP_TILTS = ['0.5', '0.9', '1.3', '1.8'];
+
 export default function MesoVortexWX() {
   // Core state
   const [product, setProduct] = useState<RadarProduct>('ref');
   const [radarSite, setRadarSite] = useState('KLZK');
   const [activeTab, setActiveTab] = useState<ModeTab>('Radar');
+  const [tilt, setTilt] = useState('0.5');
   const [palette, setPalette] = useState<PaletteType>('radarscope');
 
   // Gibson Ridge .pal Curve State
   const [palCurve, setPalCurve] = useState<ParsedPalCurve | null>(null);
   const [showPalModal, setShowPalModal] = useState(false);
 
-  // Gibson Ridge Placefiles State (Preloads PlacefileNation Catalog)
+  // Gibson Ridge Placefiles State
   const [showPlacefileModal, setShowPlacefileModal] = useState(false);
   const [placefiles, setPlacefiles] = useState<ActivePlacefile[]>(() =>
     PLACEFILE_NATION_CATALOG.map((item) => ({
@@ -46,7 +49,7 @@ export default function MesoVortexWX() {
   // FastScan Ultra-Low Latency Engine
   const [fastScan, setFastScan] = useState(true);
 
-  // WeatherWise Layer Toggles
+  // Layer Toggles
   const [showRadarPills, setShowRadarPills] = useState(true);
   const [showLightning, setShowLightning] = useState(true);
   const [showMetars, setShowMetars] = useState(false);
@@ -75,13 +78,13 @@ export default function MesoVortexWX() {
   const productInfo = RADAR_PRODUCTS.find((p) => p.key === product);
   const currentFrame = frames[frameIndex] || null;
 
-  // Load LIVE frames
+  // Load LIVE frames (Multi-Tilt Support)
   const loadFrames = useCallback(async () => {
     setLoopLoading(true);
     try {
       const cacheBuster = `&_t=${Date.now()}`;
       const res = await fetch(
-        `/api/nexrad/frames?site=${encodeURIComponent(currentSite.radarId)}&product=${encodeURIComponent(product)}&hours=1.5${cacheBuster}`,
+        `/api/nexrad/frames?site=${encodeURIComponent(currentSite.radarId)}&product=${encodeURIComponent(product)}&tilt=${encodeURIComponent(tilt)}&hours=1.5${cacheBuster}`,
         { cache: 'no-store' }
       );
       const data = await res.json();
@@ -97,7 +100,7 @@ export default function MesoVortexWX() {
     } finally {
       setLoopLoading(false);
     }
-  }, [currentSite.radarId, product]);
+  }, [currentSite.radarId, product, tilt]);
 
   useEffect(() => {
     void loadFrames();
@@ -181,6 +184,7 @@ export default function MesoVortexWX() {
             product={product}
             radarSite={radarSite}
             mode={activeTab}
+            tilt={tilt}
             mapType="satellite"
             palette={palette}
             palCurve={palCurve}
@@ -204,6 +208,7 @@ export default function MesoVortexWX() {
               product={product2}
               radarSite={radarSite}
               mode={activeTab}
+              tilt={tilt}
               mapType="satellite"
               palette={palette}
               palCurve={palCurve}
@@ -262,7 +267,7 @@ export default function MesoVortexWX() {
         </nav>
       </header>
 
-      {/* 3. TOP-LEFT RADAR HUD & PRODUCT PILLS */}
+      {/* 3. TOP-LEFT RADAR HUD & VCP MULTI-TILT SLICER */}
       <div className="pointer-events-none absolute left-4 top-16 z-20 flex flex-col gap-2">
         <div className="pointer-events-auto flex items-center gap-2.5 rounded-2xl border border-white/15 bg-slate-950/90 px-3.5 py-2 shadow-2xl backdrop-blur-xl">
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
@@ -278,14 +283,28 @@ export default function MesoVortexWX() {
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
               <span className="text-cyan-400 font-semibold">{productInfo?.label}</span>
               <span>•</span>
-              <span>{activeTab === 'Radar' ? 'Tilt 0.5°' : 'National'}</span>
+              {/* Interactive Elevation Tilt Switcher */}
+              <div className="flex items-center gap-1 bg-slate-900 rounded px-1.5 py-0.5 border border-white/10">
+                <span className="text-slate-500">Tilt:</span>
+                {VCP_TILTS.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTilt(t)}
+                    className={`px-1 rounded text-[10px] font-bold ${
+                      tilt === t ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {t}°
+                  </button>
+                ))}
+              </div>
               <span>•</span>
-              <span className="text-amber-400 font-semibold">{fastScan ? '⚡ FastScan 8s' : 'Live Feed'}</span>
+              <span className="text-amber-400 font-semibold">{fastScan ? '⚡ FastScan' : 'VCP 212'}</span>
             </div>
           </div>
         </div>
 
-        {/* Product Switcher Pills */}
+        {/* Product Switcher Pills (with Tops & VIL) */}
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-slate-950/85 p-1 shadow-xl backdrop-blur-lg">
           {RADAR_PRODUCTS.map((p) => {
             const active = product === p.key;
@@ -293,7 +312,7 @@ export default function MesoVortexWX() {
               <button
                 key={p.key}
                 onClick={() => setProduct(p.key as RadarProduct)}
-                className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition ${
+                className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
                   active
                     ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_rgba(6,182,212,0.5)]'
                     : 'text-slate-300 hover:bg-white/10 hover:text-white'
@@ -303,6 +322,29 @@ export default function MesoVortexWX() {
               </button>
             );
           })}
+          {/* Echo Tops & VIL */}
+          <button
+            onClick={() => setProduct('tops' as any)}
+            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
+              product === ('tops' as any)
+                ? 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]'
+                : 'text-purple-300 hover:bg-white/10 hover:text-white'
+            }`}
+            title="Echo Tops: Maximum thunderstorm cloud altitude"
+          >
+            TOPS
+          </button>
+          <button
+            onClick={() => setProduct('vil' as any)}
+            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
+              product === ('vil' as any)
+                ? 'bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
+                : 'text-amber-300 hover:bg-white/10 hover:text-white'
+            }`}
+            title="Digital VIL: Vertically Integrated Liquid hail mass"
+          >
+            VIL
+          </button>
         </div>
       </div>
 
