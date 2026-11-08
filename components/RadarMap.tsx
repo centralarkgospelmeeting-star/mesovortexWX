@@ -136,8 +136,6 @@ export function RadarMap({
 
   const [mapReady, setMapReady] = useState(false);
   const [localSpotters, setLocalSpotters] = useState<SpotterPin[]>([]);
-
-  // Real-time Gate Inspection Telemetry
   const [telemetry, setTelemetry] = useState<RadarSampling | null>(null);
 
   const site =
@@ -210,7 +208,7 @@ export function RadarMap({
       .catch((err) => console.warn('SPC notice:', err));
   }, [mode]);
 
-  // 2. CONUS Composite Radar
+  // 2. CONUS Composite
   const installCompositeLayer = useCallback((map: MapLibreMap) => {
     if (!map.getSource(COMPOSITE_SOURCE_ID)) {
       map.addSource(COMPOSITE_SOURCE_ID, {
@@ -525,7 +523,7 @@ export function RadarMap({
     });
   }, []);
 
-  // 9. Single-Site Radar Layer (Multi-Tilt Support)
+  // 9. Single-Site Radar & MRMS Severe Products (MESH / AzShear / Tilts)
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -539,7 +537,7 @@ export function RadarMap({
           tiles: [tileUrl],
           tileSize: 256,
           scheme: 'xyz',
-          attribution: 'NEXRAD Level III',
+          attribution: 'NEXRAD Level III & NOAA MRMS Severe',
         });
 
         let contrast = 0.15;
@@ -547,7 +545,17 @@ export function RadarMap({
         let brightnessMin = 0.0;
         let hueRotate = 0;
 
-        if (product === 'cc') {
+        if (product === 'mesh') {
+          // Hail Swath Emphasis (Neon Cyan into Intense Magenta)
+          contrast = 0.65;
+          saturation = 0.9;
+          hueRotate = -30;
+        } else if (product === 'azshear') {
+          // Low-Level Rotation Swaths (Neon Yellow into Hot Crimson)
+          contrast = 0.8;
+          saturation = 1.0;
+          hueRotate = 110;
+        } else if (product === 'cc') {
           contrast = 0.65;
           saturation = 0.85;
           hueRotate = -45;
@@ -683,7 +691,7 @@ export function RadarMap({
       installPlacefiles(map, activePlacefiles);
     });
 
-    // Hover sampler with Tilt-aware Beam Altitude
+    // Hover sampler with MESH Hail and Rotation Track recognition
     map.on('mousemove', (e) => {
       const { distanceKm, distanceNm, azimuthDeg } = calculatePolarCoordinates(
         site.lat,
@@ -696,11 +704,39 @@ export function RadarMap({
       const beamHeightFt = calculateBeamHeight(distanceKm, tiltAngle, site.elevation || 200);
 
       let simulatedVal = 0;
-      if (product === 'ref') simulatedVal = Math.max(5, Math.min(75, Math.round(75 - distanceNm * 0.4)));
-      else if (product === 'vel' || product === 'srvel') simulatedVal = Math.round(Math.sin((azimuthDeg * Math.PI) / 180) * 55);
-      else if (product === 'cc') simulatedVal = 98;
+      let unit = 'dBZ';
+
+      if (product === 'mesh') {
+        simulatedVal = Math.max(0.5, Math.min(3.75, Math.round((4.0 - distanceNm * 0.05) * 100) / 100));
+        unit = 'in (Hail)';
+      } else if (product === 'azshear') {
+        simulatedVal = Math.round(Math.abs(Math.sin((azimuthDeg * Math.PI) / 180)) * 25) / 1000;
+        unit = 's⁻¹';
+      } else if (product === 'ref') {
+        simulatedVal = Math.max(5, Math.min(75, Math.round(75 - distanceNm * 0.4)));
+      } else if (product === 'vel' || product === 'srvel') {
+        simulatedVal = Math.round(Math.sin((azimuthDeg * Math.PI) / 180) * 55);
+        unit = 'kt';
+      } else if (product === 'cc') {
+        simulatedVal = 98;
+        unit = 'CC';
+      }
 
       const classification = classifyStormGate(product, simulatedVal);
+
+      // Custom badge override for MESH and AzShear
+      let badge = classification.badge;
+      let hazardLevel = classification.hazardLevel;
+
+      if (product === 'mesh') {
+        if (simulatedVal >= 2.5) { badge = '⚠️ Giant Hail Swath (>2.50")'; hazardLevel = 'severe'; }
+        else if (simulatedVal >= 1.75) { badge = 'Golf Ball Hail Swath (1.75")'; hazardLevel = 'severe'; }
+        else { badge = 'Sub-Severe Hail Swath (<1.00")'; hazardLevel = 'normal'; }
+      } else if (product === 'azshear') {
+        if (simulatedVal >= 0.015) { badge = '🌪️ Intense Rotation Track'; hazardLevel = 'tornadic'; }
+        else if (simulatedVal >= 0.008) { badge = 'Mesocyclone Rotation Track'; hazardLevel = 'elevated'; }
+        else { badge = 'Background Azimuthal Shear'; hazardLevel = 'normal'; }
+      }
 
       setTelemetry({
         distanceNm: Math.round(distanceNm * 10) / 10,
@@ -708,9 +744,9 @@ export function RadarMap({
         azimuthDeg: Math.round(azimuthDeg),
         beamHeightFt,
         estimatedValue: simulatedVal,
-        unit: product === 'ref' ? 'dBZ' : product === 'cc' ? 'CC' : 'kt',
-        signatureBadge: classification.badge,
-        hazardLevel: classification.hazardLevel,
+        unit,
+        signatureBadge: badge,
+        hazardLevel,
       });
     });
 
