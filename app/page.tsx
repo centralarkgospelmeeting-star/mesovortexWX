@@ -1,183 +1,819 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
-import { RadarProduct, ElevationTilt, WorkstationMode } from '../lib/types/workstation';
+import { RadarMap, SpotterPin, PaletteType, ModeTab } from '../components/RadarMap';
+import { WeatherAssistant } from '../components/WeatherAssistant';
+import { EmergencyAlertTone } from '../components/EmergencyAlertTone';
+import { SynchronizedQuadView } from '../components/SynchronizedQuadView';
+import { SpotterReportModal, SpotterReport } from '../components/SpotterReportModal';
+import { PalColorTableModal, ParsedPalCurve } from '../components/PalColorTableModal';
+import { PlacefileManagerModal, ActivePlacefile } from '../components/PlacefileManagerModal';
+import { SkewTSoundingModal } from '../components/SkewTSoundingModal';
+import { ThreatMatrixPanel } from '../components/ThreatMatrixPanel';
+import { LayerManagerPanel } from '../components/workstation/LayerManagerPanel';
+import { AlertBanner } from '../components/AlertBanner';
+import { Sidebar } from '../components/Sidebar';
+import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
+import { PLACEFILE_NATION_CATALOG } from '../lib/placefile-catalog';
+import { SoundingProfile, generateThermodynamicSounding } from '../lib/skewt-engine';
+import { loadWorkspacePrefs, saveWorkspacePrefs } from '../lib/workspace/storage';
+import type { WorkspacePrefsV1 } from '../lib/workspace/types';
 
-export default function MesoVortexWorkstation() {
-  // Navigation & Mode
-  const [mode, setMode] = useState<WorkstationMode>('Radar');
+type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp' | 'tops' | 'vil' | 'mesh' | 'azshear';
+
+type Frame = {
+  time: string;
+  label: string;
+  tileUrl: string;
+  ageMinutes: number;
+};
+
+type FrameMeta = {
+  source?: string;
+  attribution?: string;
+  fetchedAt?: string;
+  siteName?: string;
+  productLabel?: string;
+  sourceKind?: string;
+  substitute?: boolean;
+  loopAvailable?: boolean;
+  notes?: string[];
+};
+
+const VCP_TILTS = ['0.5', '0.9', '1.3', '1.8'];
+
+export default function MesoVortexWX() {
+  // Core state
   const [product, setProduct] = useState<RadarProduct>('ref');
-  const [tilt, setTilt] = useState<ElevationTilt>('0.5');
   const [radarSite, setRadarSite] = useState('KLZK');
+  const [activeTab, setActiveTab] = useState<ModeTab>('Radar');
+  const [tilt, setTilt] = useState('0.5');
+  const [palette, setPalette] = useState<PaletteType>('radarscope');
+
+  // Sounding & Threat Matrix Modals
+  const [activeSounding, setActiveSounding] = useState<SoundingProfile | null>(null);
+  const [showThreatMatrix, setShowThreatMatrix] = useState(false);
+
+  // Gibson Ridge .pal Curve State
+  const [palCurve, setPalCurve] = useState<ParsedPalCurve | null>(null);
+  const [showPalModal, setShowPalModal] = useState(false);
+
+  // Gibson Ridge Placefiles State
+  const [showPlacefileModal, setShowPlacefileModal] = useState(false);
+  const [placefiles, setPlacefiles] = useState<ActivePlacefile[]>(() =>
+    PLACEFILE_NATION_CATALOG.map((item) => ({
+      id: item.id,
+      name: item.name,
+      url: item.url,
+      enabled: Boolean(item.defaultEnabled),
+    }))
+  );
+
+  // FastScan Ultra-Low Latency Engine
   const [fastScan, setFastScan] = useState(true);
 
-  // Panel Visibilities (WeatherWise Pro Sidebars)
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  // Layer Toggles
+  const [showRadarPills, setShowRadarPills] = useState(true);
+  const [showLightning, setShowLightning] = useState(true);
+  const [showMetars, setShowMetars] = useState(false);
+  const [showLSR, setShowLSR] = useState(true);
+  const [showWatches, setShowWatches] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
+  const [showQuad, setShowQuad] = useState(false);
+  const [showLayerManager, setShowLayerManager] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
+
+  // Spotter reporting state
+  const [spotterCoords, setSpotterCoords] = useState<[number, number] | null>(null);
+  const [spotterReports, setSpotterReports] = useState<SpotterPin[]>([]);
+
+  // Active alerts (NWS)
+  const [activeAlerts, setActiveAlerts] = useState<Array<{ id?: string; headline: string; severity: string; area: string }>>([]);
+
+  // Split View
+  const [dualPane, setDualPane] = useState(false);
+  const [product2, setProduct2] = useState<RadarProduct>('vel');
+
+  // Loop & Playback
+  const [frames, setFrames] = useState<Frame[]>([]);
+  const [frameMeta, setFrameMeta] = useState<FrameMeta | null>(null);
+  const [frameIndex, setFrameIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [loopLoading, setLoopLoading] = useState(false);
+  const playTimerRef = useRef<number | null>(null);
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
+
+  // P1: hydrate workspace preferences (client-only)
+  useEffect(() => {
+    const prefs = loadWorkspacePrefs();
+    if (prefs.radarSite) setRadarSite(prefs.radarSite);
+    if (prefs.product) setProduct(prefs.product as RadarProduct);
+    if (prefs.tilt) setTilt(prefs.tilt);
+    if (prefs.palette) setPalette(prefs.palette as PaletteType);
+    if (prefs.activeTab) setActiveTab(prefs.activeTab as ModeTab);
+    setFastScan(!!prefs.fastScan);
+    setDualPane(!!prefs.dualPane);
+    if (prefs.layers) {
+      setShowRadarPills(!!prefs.layers.showRadarPills);
+      setShowLightning(!!prefs.layers.showLightning);
+      setShowMetars(!!prefs.layers.showMetars);
+      setShowLSR(!!prefs.layers.showLSR);
+      setShowWatches(!!prefs.layers.showWatches);
+    }
+    setWorkspaceHydrated(true);
+  }, []);
+
+  // P1: persist workspace preferences
+  useEffect(() => {
+    if (!workspaceHydrated) return;
+    const prefs: WorkspacePrefsV1 = {
+      schemaVersion: 1,
+      radarSite,
+      product,
+      tilt,
+      palette,
+      activeTab,
+      fastScan,
+      dualPane,
+      layers: { showRadarPills, showLightning, showMetars, showLSR, showWatches },
+    };
+    saveWorkspacePrefs(prefs);
+  }, [workspaceHydrated, radarSite, product, tilt, palette, activeTab, fastScan, dualPane, showRadarPills, showLightning, showMetars, showLSR, showWatches]);
+
+  const currentSite = RADAR_SITES.find((s) => s.id === radarSite || s.radarId === radarSite) || RADAR_SITES[0];
+  const productInfo = RADAR_PRODUCTS.find((p) => p.key === product);
+  const currentFrame = frames[frameIndex] || null;
+
+  // Load LIVE frames (Multi-Tilt + MRMS Support)
+  const loadFrames = useCallback(async () => {
+    setLoopLoading(true);
+    try {
+      const cacheBuster = `&_t=${Date.now()}`;
+      const res = await fetch(
+        `/api/nexrad/frames?site=${encodeURIComponent(currentSite.radarId)}&product=${encodeURIComponent(product)}&tilt=${encodeURIComponent(tilt)}&hours=1.5${cacheBuster}`,
+        { cache: 'no-store' }
+      );
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.frames) && data.frames.length > 0) {
+        setFrames(data.frames);
+        setFrameIndex(data.frames.length - 1);
+        setFrameMeta({
+          source: data.source,
+          attribution: data.attribution,
+          fetchedAt: data.fetchedAt,
+          siteName: data.siteName,
+          productLabel: data.productLabel,
+          sourceKind: data.sourceKind,
+          substitute: data.substitute,
+          loopAvailable: data.loopAvailable,
+          notes: data.notes,
+        });
+      } else {
+        setFrames([]);
+        setFrameIndex(0);
+        setFrameMeta(null);
+      }
+    } catch {
+      setFrames([]);
+      setFrameMeta(null);
+    } finally {
+      setLoopLoading(false);
+    }
+  }, [currentSite.radarId, product, tilt]);
+
+  useEffect(() => {
+    void loadFrames();
+  }, [loadFrames]);
+
+  // Fetch active alerts summary (hardened API)
+  useEffect(() => {
+    let cancelled = false;
+    const loadAlerts = async () => {
+      try {
+        const res = await fetch('/api/alerts', { cache: 'no-store' });
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.alerts)) setActiveAlerts(data.alerts);
+      } catch {
+        if (!cancelled) setActiveAlerts([]);
+      }
+    };
+    void loadAlerts();
+    const t = window.setInterval(loadAlerts, 120000);
+    return () => { cancelled = true; window.clearInterval(t); };
+  }, []);
+
+  // P1 quick win: keyboard shortcuts for playback
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement | null)?.isContentEditable) return;
+      if (e.code === 'Space') { e.preventDefault(); setIsPlaying((p) => !p); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); stepFrame(-1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); stepFrame(1); }
+      else if (e.key.toLowerCase() === 'l') { e.preventDefault(); goToLive(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [stepFrame, goToLive]);
+
+  // Playback timer
+  useEffect(() => {
+    if (playTimerRef.current) {
+      window.clearInterval(playTimerRef.current);
+      playTimerRef.current = null;
+    }
+    if (!isPlaying || frames.length < 2) return;
+
+    playTimerRef.current = window.setInterval(() => {
+      setFrameIndex((prev) => (prev + 1 >= frames.length ? 0 : prev + 1));
+    }, 650);
+
+    return () => {
+      if (playTimerRef.current) window.clearInterval(playTimerRef.current);
+    };
+  }, [isPlaying, frames.length]);
+
+  const goToLive = () => {
+    if (frames.length > 0) {
+      setFrameIndex(frames.length - 1);
+      setIsPlaying(false);
+    }
+  };
+
+  const stepFrame = (dir: -1 | 1) => {
+    setIsPlaying(false);
+    setFrameIndex((prev) => {
+      const next = prev + dir;
+      if (next < 0) return frames.length - 1;
+      if (next >= frames.length) return 0;
+      return next;
+    });
+  };
+
+  const handleSpotterSubmit = (report: SpotterReport) => {
+    const pin: SpotterPin = {
+      id: report.id,
+      hazardType: report.hazardType,
+      description: report.description,
+      hailSize: report.hailSize,
+      lat: report.lat,
+      lon: report.lon,
+      timestamp: report.timestamp,
+      callsign: report.callsign,
+    };
+    setSpotterReports((prev) => [...prev, pin]);
+    setSpotterCoords(null);
+  };
+
+  const handleTogglePlacefile = (id: string) => {
+    setPlacefiles((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p))
+    );
+  };
+
+  const handleAddPlacefile = (name: string, url: string) => {
+    const newPf: ActivePlacefile = {
+      id: `pf-${Date.now()}`,
+      name,
+      url,
+      enabled: true,
+    };
+    setPlacefiles((prev) => [...prev, newPf]);
+  };
+
+  const handleDeletePlacefile = (id: string) => {
+    setPlacefiles((prev) => prev.filter((p) => p.id !== id));
+  };
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#070c14] text-slate-100 select-none">
-      
-      {/* 1. TOP WEATHERWISE PRO PILL BAR */}
+      {/* 1. SATELLITE RADAR MAP CANVAS */}
+      <div className={`absolute inset-0 ${dualPane ? 'grid grid-cols-2' : ''}`}>
+        <div className="relative h-full w-full">
+          <RadarMap
+            product={product}
+            radarSite={radarSite}
+            mode={activeTab}
+            tilt={tilt}
+            mapType="satellite"
+            palette={palette}
+            palCurve={palCurve}
+            activePlacefiles={placefiles}
+            frameUrl={currentFrame?.tileUrl ?? null}
+            frameLabel={currentFrame?.label}
+            fastScan={fastScan}
+            showLightning={showLightning}
+            showMetars={showMetars}
+            showLSR={showLSR}
+            showWatches={showWatches}
+            showRadarPills={showRadarPills}
+            spotterReports={spotterReports}
+            onSelectSite={(siteId) => setRadarSite(siteId)}
+            onOpenSounding={(profile) => setActiveSounding(profile)}
+            onMapClickCoordinates={(coords) => setSpotterCoords(coords)}
+          />
+        </div>
+        {dualPane && (
+          <div className="relative h-full w-full border-l border-white/10">
+            <RadarMap
+              product={product2}
+              radarSite={radarSite}
+              mode={activeTab}
+              tilt={tilt}
+              mapType="satellite"
+              palette={palette}
+              palCurve={palCurve}
+              activePlacefiles={placefiles}
+              fastScan={fastScan}
+              showLightning={showLightning}
+              showMetars={showMetars}
+              showLSR={showLSR}
+              showWatches={showWatches}
+              showRadarPills={showRadarPills}
+              onSelectSite={(siteId) => setRadarSite(siteId)}
+              onOpenSounding={(profile) => setActiveSounding(profile)}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* 2. TOP FLOATING PILL BAR (Interactive Mode Switcher) */}
       <header className="pointer-events-none absolute left-0 right-0 top-3 z-30 flex justify-center px-4">
-        <nav className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/15 bg-slate-950/90 px-3 py-1.5 shadow-2xl backdrop-blur-2xl">
-          <div className="flex items-center gap-2 pr-2 border-r border-white/15">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-600 text-xs font-black">⚡</span>
-            <span className="text-xs font-black tracking-wider uppercase">
-              MESO<span className="text-cyan-400">VORTEX</span> <span className="text-amber-400 font-bold text-[9px]">PRO</span>
+        <nav aria-label="Mode switcher" className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-950/90 p-1.5 shadow-2xl backdrop-blur-xl">
+          <button
+            onClick={() => setShowSidebar((v) => !v)}
+            className={`flex h-8 w-8 items-center justify-center rounded-full text-sm transition ${showSidebar ? 'bg-cyan-600 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}
+            title={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
+          >
+            ☰
+          </button>
+          <div className="flex items-center gap-2 pl-1 pr-3">
+            <Image src="/logo.png" alt="MesoVortex Wx" width={26} height={26} className="rounded-full" priority />
+            <span className="hidden text-xs font-black tracking-wider uppercase sm:inline text-white">
+              MESO<span className="text-cyan-400">VORTEX</span> <span className="text-[9px] text-amber-400 font-bold ml-0.5">PRO</span>
             </span>
           </div>
 
-          {(['Radar', 'Composite', 'Satellite', 'Models', 'Outlooks'] as WorkstationMode[]).map((tab) => (
+          <div className="h-4 w-px bg-white/15" />
+
+          {(['Radar', 'Composite', 'Satellite', 'Models', 'Outlooks'] as ModeTab[]).map((tab) => (
             <button
               key={tab}
-              onClick={() => setMode(tab)}
+              onClick={() => setActiveTab(tab)}
               className={`rounded-full px-3 py-1 text-xs font-bold transition ${
-                mode === tab ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+                activeTab === tab
+                  ? 'bg-cyan-600 text-white shadow-md'
+                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
               }`}
             >
               {tab}
             </button>
           ))}
 
+          {/* FastScan Live Pill */}
           <button
             onClick={() => setFastScan((f) => !f)}
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase transition ${
-              fastScan ? 'bg-emerald-500 text-slate-950 shadow-[0_0_10px_#10b981]' : 'border border-white/15 text-slate-400'
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider transition ${
+              fastScan
+                ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(16,185,129,0.5)]'
+                : 'border border-white/20 bg-slate-900 text-slate-400 hover:text-white'
             }`}
+            title="FastScan Technology: Sub-minute scan updates"
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-slate-950 animate-ping" />
-            FastScan
+            <span className={`h-2 w-2 rounded-full ${fastScan ? 'bg-slate-950 animate-ping' : 'bg-slate-500'}`} />
+            <span>FastScan</span>
           </button>
         </nav>
       </header>
 
-      {/* 2. LEFT WEATHER INTELLIGENCE SIDEBAR (WeatherWise Dashboard) */}
-      <aside className={`absolute left-3 top-16 bottom-16 z-20 w-80 rounded-2xl border border-white/10 bg-slate-950/90 shadow-2xl backdrop-blur-2xl transition-all duration-300 flex flex-col ${
-        leftPanelOpen ? 'translate-x-0' : '-translate-x-[110%]'
-      }`}>
-        <div className="flex items-center justify-between border-b border-white/10 p-3.5">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-white">Weather Intelligence</span>
-            <span className="rounded bg-cyan-500/20 px-1.5 py-0.5 text-[9px] font-bold text-cyan-300 uppercase">Live</span>
+      {activeAlerts.length > 0 && (
+        <div className="pointer-events-auto absolute left-1/2 top-[4.5rem] z-30 w-[min(92vw,720px)] -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 shadow-2xl">
+          <AlertBanner alerts={activeAlerts} />
+        </div>
+      )}
+
+      {showSidebar && (
+        <div className="pointer-events-auto absolute bottom-0 left-0 top-0 z-[25] shadow-2xl">
+          <Sidebar
+            product={product}
+            setProduct={setProduct as any}
+            radarSite={radarSite}
+            setRadarSite={setRadarSite}
+          />
+        </div>
+      )}
+
+      {/* 3. TOP-LEFT RADAR HUD & VCP MULTI-TILT SLICER */}
+      <div className="pointer-events-none absolute left-4 top-16 z-20 flex flex-col gap-2">
+        <div className="pointer-events-auto flex items-center gap-2.5 rounded-2xl border border-white/15 bg-slate-950/90 px-3.5 py-2 shadow-2xl backdrop-blur-xl">
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black tracking-wide text-white">
+                {activeTab === 'Radar' ? currentSite.id : activeTab.toUpperCase()}
+              </span>
+              <span className="text-[11px] font-medium text-slate-300">
+                {activeTab === 'Radar' ? currentSite.name : `CONUS ${activeTab} View`}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
+              <span className="text-cyan-400 font-semibold">{frameMeta?.productLabel || productInfo?.label || product.toUpperCase()}</span>
+              <span>•</span>
+              <div className="flex items-center gap-1 bg-slate-900 rounded px-1.5 py-0.5 border border-white/10">
+                <span className="text-slate-500">Tilt:</span>
+                {VCP_TILTS.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTilt(t)}
+                    className={`px-1 rounded text-[10px] font-bold ${
+                      tilt === t ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {t}°
+                  </button>
+                ))}
+              </div>
+              <span>•</span>
+              <span className="text-amber-400 font-semibold">{fastScan ? '⚡ FastScan' : 'VCP 212'}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400">
+              <span className="text-slate-300">Src: {frameMeta?.source || '—'}</span>
+              {frameMeta?.fetchedAt && <span>Fetched {new Date(frameMeta.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
+              {currentFrame?.time && <span>Frame {new Date(currentFrame.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({currentFrame.label})</span>}
+              {frameMeta?.substitute && <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-300">SUBSTITUTE SOURCE</span>}
+              {frameMeta && frameMeta.loopAvailable === false && <span className="rounded bg-slate-700/70 px-1.5 py-0.5 text-slate-300">Loop limited</span>}
+            </div>
+            {frameMeta?.notes?.[0] && (
+              <div className="mt-1 max-w-[520px] text-[10px] leading-snug text-amber-200/90" title={frameMeta.notes.join(' ')}>
+                {frameMeta.notes[0]}
+              </div>
+            )}
           </div>
-          <button onClick={() => setLeftPanelOpen(false)} className="text-slate-400 hover:text-white text-xs">✕</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-4 text-xs font-mono">
-          {/* Severe Threat Risk Score Gauge */}
-          <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-3">
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-[10px] font-bold uppercase text-red-400">Personal Risk Score</span>
-              <span className="text-xl font-black text-white">84<span className="text-xs text-red-400">/100</span></span>
-            </div>
-            <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
-              <div className="h-full bg-red-500 rounded-full" style={{ width: '84%' }} />
-            </div>
-            <p className="mt-2 text-[10px] text-slate-300 font-sans leading-tight">
-              Favorable low-level shear (0-1km SRH &gt; 220 m²/s²) supports right-moving supercells and potential tornadogenesis.
-            </p>
-          </div>
-
-          {/* Hyperlocal Atmospheric Telemetry */}
-          <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3 space-y-2">
-            <div className="text-[11px] font-bold text-cyan-300 font-sans">Neighborhood Telemetry ({radarSite})</div>
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div>Temp: <b className="text-white">78°F</b></div>
-              <div>Dewpoint: <b className="text-emerald-400">68°F</b></div>
-              <div>Feels-Like: <b className="text-white">82°F</b></div>
-              <div>Wet-Bulb: <b className="text-cyan-400">71°F</b></div>
-              <div>Pressure: <b className="text-slate-300">29.92 inHg</b></div>
-              <div>Humidity: <b className="text-slate-300">72%</b></div>
-            </div>
-          </div>
+        {/* Product Switcher Pills (unified registry) */}
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-slate-950/85 p-1 shadow-xl backdrop-blur-lg max-w-[380px]">
+          {RADAR_PRODUCTS.map((p) => {
+            const active = product === p.key;
+            const accent =
+              p.key === 'mesh' ? { on: 'bg-pink-500 text-slate-950 shadow-[0_0_10px_rgba(236,72,153,0.6)]', off: 'text-pink-300 hover:bg-white/10 hover:text-white' }
+              : p.key === 'azshear' ? { on: 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.6)]', off: 'text-red-300 hover:bg-white/10 hover:text-white' }
+              : p.key === 'tops' ? { on: 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]', off: 'text-purple-300 hover:bg-white/10 hover:text-white' }
+              : p.key === 'vil' ? { on: 'bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]', off: 'text-amber-300 hover:bg-white/10 hover:text-white' }
+              : { on: 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_rgba(6,182,212,0.5)]', off: 'text-slate-300 hover:bg-white/10 hover:text-white' };
+            return (
+              <button
+                key={p.key}
+                onClick={() => setProduct(p.key as RadarProduct)}
+                title={p.sourceNote ? `${p.description} — ${p.sourceNote}` : p.description}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition ${active ? accent.on : accent.off}`}
+              >
+                {p.short}
+              </button>
+            );
+          })}
         </div>
-      </aside>
+      </div>
 
-      {/* Toggle Button for Left Intelligence Sidebar */}
-      {!leftPanelOpen && (
+      {/* 4. RIGHT-HAND FLOATING ACTION DOCK */}
+      <div className="absolute right-4 top-16 z-20 flex flex-col gap-2">
+        {/* Threat Matrix Button */}
         <button
-          onClick={() => setLeftPanelOpen(true)}
-          className="absolute left-3 top-16 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-slate-950/85 text-cyan-400 shadow-xl backdrop-blur-xl"
-          title="Open Intelligence Dashboard"
+          onClick={() => setShowThreatMatrix(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/50 bg-red-600/30 text-red-200 shadow-xl backdrop-blur-xl hover:bg-red-600/50 transition"
+          title="Severe Threat Matrix & Risk Score (0-100)"
         >
           📊
         </button>
-      )}
 
-      {/* 3. RIGHT LAYER & PLACEFILE RACK (WeatherWise Layer Manager) */}
-      <aside className={`absolute right-3 top-16 bottom-16 z-20 w-72 rounded-2xl border border-white/10 bg-slate-950/90 shadow-2xl backdrop-blur-2xl transition-all duration-300 flex flex-col ${
-        rightPanelOpen ? 'translate-x-0' : 'translate-x-[110%]'
-      }`}>
-        <div className="flex items-center justify-between border-b border-white/10 p-3.5">
-          <span className="text-sm font-bold text-white">Workstation Layers</span>
-          <button onClick={() => setRightPanelOpen(false)} className="text-slate-400 hover:text-white text-xs">✕</button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-3 text-xs">
-          {/* Dual-Pol & Algorithmic Products */}
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Products</div>
-            <div className="grid grid-cols-3 gap-1.5 font-bold text-[11px]">
-              {(['ref', 'vel', 'srvel', 'cc', 'zdr', 'kdp', 'mesh', 'azshear', 'tops'] as RadarProduct[]).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setProduct(p)}
-                  className={`rounded-lg py-1.5 uppercase transition ${
-                    product === p ? 'bg-cyan-600 text-white shadow-md' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Elevation Tilt Slices */}
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Elevation Tilt</div>
-            <div className="grid grid-cols-4 gap-1.5 font-mono text-xs">
-              {(['0.5', '0.9', '1.3', '1.8'] as ElevationTilt[]).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTilt(t)}
-                  className={`rounded-lg py-1 transition font-bold ${
-                    tilt === t ? 'bg-cyan-500 text-slate-950' : 'bg-slate-900 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {t}°
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* Toggle Button for Right Layer Rack */}
-      {!rightPanelOpen && (
+        {/* Instant Sounding at Radar Site */}
         <button
-          onClick={() => setRightPanelOpen(true)}
-          className="absolute right-3 top-16 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-slate-950/85 text-cyan-400 shadow-xl backdrop-blur-xl"
-          title="Open Layer Rack"
+          onClick={() => {
+            const profile = generateThermodynamicSounding(currentSite.lat, currentSite.lon);
+            setActiveSounding(profile);
+          }}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition"
+          title="Skew-T Sounding & Hodograph at Radar Site"
+        >
+          📈
+        </button>
+
+        <button
+          onClick={() => setShowPlacefileModal(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition"
+          title="PlacefileNation Suite (54 Feeds)"
+        >
+          📡
+        </button>
+
+        <button
+          onClick={() => setShowPalModal(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-600/30 text-amber-200 shadow-xl backdrop-blur-xl hover:bg-amber-600/50 transition"
+          title="Load Gibson Ridge (.pal) Color Table"
+        >
+          📁
+        </button>
+
+        <button
+          onClick={() => setShowLightning((v) => !v)}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
+            showLightning ? 'border-amber-400/50 bg-amber-500/20 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+          }`}
+          title="Toggle Live Lightning (GOES GLM)"
+        >
+          ⚡
+        </button>
+        <button
+          onClick={() => setShowLSR((v) => !v)}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
+            showLSR ? 'border-sky-400/50 bg-sky-500/20 text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+          }`}
+          title="Toggle NWS Storm Reports (LSR)"
+        >
+          🌪️
+        </button>
+        <button
+          onClick={() => setShowWatches((v) => !v)}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
+            showWatches ? 'border-rose-400/50 bg-rose-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+          }`}
+          title="Toggle Watch Boxes"
+        >
+          🛡️
+        </button>
+        <button
+          onClick={() => setShowMetars((v) => !v)}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
+            showMetars ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+          }`}
+          title="Toggle Airport METAR Stations"
+        >
+          🌡️
+        </button>
+        <button
+          onClick={() => setShowRadarPills((v) => !v)}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
+            showRadarPills ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-300' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+          }`}
+          title="Toggle On-Map Radar Tower Pills"
+        >
+          🛰️
+        </button>
+        <button
+          onClick={() => setShowLayerManager((v) => !v)}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
+            showLayerManager ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-300' : 'border-white/10 bg-slate-950/85 text-slate-300 hover:text-white'
+          }`}
+          title="Layer Manager"
+        >
+          ☰
+        </button>
+        <button
+          onClick={() => setShowQuad(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-slate-950/85 text-cyan-400 shadow-xl backdrop-blur-xl hover:bg-slate-900"
+          title="Quad Synchro View"
+        >
+          ⊞
+        </button>
+        <button
+          onClick={() => setDualPane((v) => !v)}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
+            dualPane ? 'border-cyan-500/50 bg-cyan-600/30 text-cyan-200' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+          }`}
+          title="Split Dual View"
+        >
+          ▦
+        </button>
+        <button
+          onClick={() => setSettingsOpen((v) => !v)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-slate-950/85 text-slate-300 shadow-xl backdrop-blur-xl hover:bg-slate-900 hover:text-white"
+          title="Palettes & Settings"
         >
           ⚙
         </button>
-      )}
+        <button
+          onClick={() => setShowAssistant(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-500/40 bg-violet-600/20 text-violet-300 shadow-xl backdrop-blur-xl hover:bg-violet-600/30"
+          title="AI Meteorologist Copilot"
+        >
+          🤖
+        </button>
+      </div>
 
-      {/* 4. BOTTOM FLOATING PLAYBACK TIMELINE */}
-      <footer className="pointer-events-none absolute bottom-3 left-0 right-0 z-20 flex justify-center px-4">
+      <LayerManagerPanel
+        open={showLayerManager}
+        onClose={() => setShowLayerManager(false)}
+        state={{ showRadarPills, showLightning, showMetars, showLSR, showWatches, showWarnings: true }}
+        onChange={(patch) => {
+          if (typeof patch.showRadarPills === 'boolean') setShowRadarPills(patch.showRadarPills);
+          if (typeof patch.showLightning === 'boolean') setShowLightning(patch.showLightning);
+          if (typeof patch.showMetars === 'boolean') setShowMetars(patch.showMetars);
+          if (typeof patch.showLSR === 'boolean') setShowLSR(patch.showLSR);
+          if (typeof patch.showWatches === 'boolean') setShowWatches(patch.showWatches);
+          // warnings toggle not yet wired to RadarMap props; scaffold only
+        }}
+      />
+
+      {/* 5. FLOATING PLAYER BAR */}
+      <footer className="pointer-events-none absolute bottom-9 left-0 right-0 z-20 flex justify-center px-4">
         <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/15 bg-slate-950/90 px-4 py-2 shadow-2xl backdrop-blur-2xl">
-          <button className="text-slate-300 hover:text-white">‹</button>
-          <button className="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-600 text-white text-xs">▶</button>
-          <button className="text-slate-300 hover:text-white">›</button>
-          <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-            <div className="w-3/4 h-full bg-cyan-400 rounded-full" />
+          <button
+            onClick={() => stepFrame(-1)}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 hover:bg-white/10"
+          >
+            ‹
+          </button>
+          <button
+            onClick={() => setIsPlaying((p) => !p)}
+            disabled={frames.length < 2}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-600 text-white shadow-lg transition hover:bg-cyan-500 disabled:opacity-40"
+          >
+            {isPlaying ? '❚❚' : '▶'}
+          </button>
+          <button
+            onClick={() => stepFrame(1)}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 hover:bg-white/10"
+          >
+            ›
+          </button>
+
+          <div className="flex items-center gap-2 px-1">
+            <input
+              type="range"
+              min={0}
+              max={Math.max(0, frames.length - 1)}
+              value={frameIndex}
+              onChange={(e) => {
+                setIsPlaying(false);
+                setFrameIndex(Number(e.target.value));
+              }}
+              className="w-32 sm:w-48 accent-cyan-400 cursor-pointer"
+            />
           </div>
-          <span className="font-mono text-xs font-bold text-emerald-400">LIVE · 8s</span>
+
+          <span className="font-mono text-xs font-bold text-slate-200 min-w-[84px] text-center" title={frameMeta?.loopAvailable === false ? 'Historical loop may be limited for this source' : 'Playback position'}>
+            {loopLoading ? '...' : `${currentFrame?.label || 'LIVE'}${frames.length ? ` · ${frameIndex + 1}/${frames.length}` : ''}`}
+          </span>
+
+          <button
+            onClick={goToLive}
+            className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider transition ${
+              currentFrame?.label === 'LIVE'
+                ? 'bg-emerald-500 text-slate-950 shadow-[0_0_8px_#10b981]'
+                : 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+            }`}
+          >
+            LIVE
+          </button>
         </div>
       </footer>
 
+      {/* 6. DYNAMIC REFLECTIVITY LEGEND SCALE */}
+      <aside aria-label="Reflectivity legend" className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 flex h-6 items-center justify-between border-t border-white/10 bg-slate-950/90 px-4 text-[9px] font-mono backdrop-blur-md">
+        <span className="font-bold text-slate-400">
+          {product === 'mesh' ? 'HAIL (in):' : product === 'azshear' ? 'ROTATION:' : 'dBZ:'}
+        </span>
+        <div className="mx-3 flex-1 h-2 rounded-full overflow-hidden flex border border-white/10">
+          <div className="flex-1 bg-[#04e9e7]" />
+          <div className="flex-1 bg-[#019ff4]" />
+          <div className="flex-1 bg-[#0300f4]" />
+          <div className="flex-1 bg-[#02fd02]" />
+          <div className="flex-1 bg-[#01c501]" />
+          <div className="flex-1 bg-[#008e00]" />
+          <div className="flex-1 bg-[#fdf802]" />
+          <div className="flex-1 bg-[#e5bc00]" />
+          <div className="flex-1 bg-[#fd9500]" />
+          <div className="flex-1 bg-[#fd0000]" />
+          <div className="flex-1 bg-[#d40000]" />
+          <div className="flex-1 bg-[#f800fd]" />
+          <div className="flex-1 bg-[#9854c6]" />
+          <div className="flex-1 bg-[#ffffff]" />
+        </div>
+        <span className="text-slate-400">
+          {product === 'mesh' ? '0.5" • 1.0" • 1.75" • 2.5" • 4.0"+' :
+           product === 'azshear' ? '0.005 • 0.010 • 0.015 • 0.020+ s⁻¹' :
+           '5 • 15 • 30 • 45 • 60 • 70+'}
+        </span>
+      </aside>
+
+      {/* 7. SETTINGS & PALETTE SWITCHER */}
+      {settingsOpen && (
+        <div className="absolute right-16 top-16 z-30 w-72 rounded-2xl border border-white/15 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-2xl">
+          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-white">Palettes &amp; Layers</span>
+            <button onClick={() => setSettingsOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+          </div>
+
+          <div className="space-y-3.5 text-xs">
+            <div>
+              <div className="mb-1.5 flex items-center justify-between font-bold text-cyan-300">
+                <span>Radar Color Palettes</span>
+                <button
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setShowPalModal(true);
+                  }}
+                  className="text-[10px] text-amber-400 underline hover:text-amber-300"
+                >
+                  + Load .pal File
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { key: 'radarscope', label: 'RadarScope' },
+                  { key: 'nws', label: 'NWS Classic' },
+                  { key: 'cod', label: 'COD Pastels' },
+                  { key: 'smooth', label: 'DG Noah' },
+                  { key: 'couplet', label: 'Couplet' },
+                  ...(palCurve ? [{ key: 'palFile', label: palCurve.name.slice(0, 10) }] : []),
+                ].map((p) => (
+                  <button
+                    key={p.key}
+                    onClick={() => setPalette(p.key as PaletteType)}
+                    className={`rounded-lg py-1 px-2 text-left text-[11px] font-bold transition ${
+                      palette === p.key ? 'bg-cyan-600 text-white shadow-md' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="flex items-center justify-between text-slate-300">
+              <span>Show On-Map Radar Pills</span>
+              <input
+                type="checkbox"
+                checked={showRadarPills}
+                onChange={(e) => setShowRadarPills(e.target.checked)}
+                className="accent-cyan-500"
+              />
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* 8. SKEW-T SOUNDING MODAL */}
+      {activeSounding && (
+        <SkewTSoundingModal sounding={activeSounding} onClose={() => setActiveSounding(null)} />
+      )}
+
+      {/* 9. THREAT MATRIX MODAL */}
+      {showThreatMatrix && (
+        <ThreatMatrixPanel onClose={() => setShowThreatMatrix(false)} />
+      )}
+
+      {/* 10. GIBSON RIDGE (.pal) MODAL */}
+      {showPalModal && (
+        <PalColorTableModal
+          onClose={() => setShowPalModal(false)}
+          onApplyPal={(parsed) => {
+            setPalCurve(parsed);
+            setPalette('palFile');
+          }}
+        />
+      )}
+
+      {/* 11. PLACEFILE MANAGER MODAL */}
+      {showPlacefileModal && (
+        <PlacefileManagerModal
+          placefiles={placefiles}
+          onClose={() => setShowPlacefileModal(false)}
+          onToggle={handleTogglePlacefile}
+          onAdd={handleAddPlacefile}
+          onDelete={handleDeletePlacefile}
+        />
+      )}
+
+      {/* 12. AI ASSISTANT MODAL */}
+      {showAssistant && (
+        <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
+          <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
+            <WeatherAssistant
+              context={{ site: radarSite, product: productInfo?.label, alerts: [] }}
+              onClose={() => setShowAssistant(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 13. QUAD SYNCHRO VIEW MODAL */}
+      {showQuad && <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowQuad(false)} />}
+
+      {/* 14. SPOTTER REPORT MODAL */}
+      {spotterCoords && (
+        <SpotterReportModal
+          currentCoords={spotterCoords}
+          onClose={() => setSpotterCoords(null)}
+          onSubmit={handleSpotterSubmit}
+        />
+      )}
+
+      {/* 15. EMERGENCY SIREN AUDIO ENGINE */}
+      <EmergencyAlertTone />
     </div>
   );
 }
