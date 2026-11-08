@@ -37,6 +37,8 @@ type RadarMapProps = {
   frameUrl?: string | null;
   frameLabel?: string;
   fastScan?: boolean;
+  measureMode?: boolean;
+  crossSectionMode?: boolean;
   showLightning?: boolean;
   showMetars?: boolean;
   showLSR?: boolean;
@@ -45,6 +47,8 @@ type RadarMapProps = {
   spotterReports?: SpotterPin[];
   onSelectSite?: (siteId: string) => void;
   onOpenSounding?: (profile: SoundingProfile) => void;
+  onMeasureComplete?: (distNm: number, distMi: number) => void;
+  onCrossSectionCut?: (pointA: [number, number], pointB: [number, number]) => void;
   onMapClickCoordinates?: (coords: [number, number]) => void;
 };
 
@@ -85,6 +89,9 @@ const SPC_OUTLOOK_SOURCE_ID = 'spc-outlooks';
 const SPC_OUTLOOK_FILL_ID = 'spc-outlooks-fill';
 const SPC_OUTLOOK_LINE_ID = 'spc-outlooks-line';
 
+const RHI_LINE_SOURCE_ID = 'rhi-baseline-source';
+const RHI_LINE_LAYER_ID = 'rhi-baseline-layer';
+
 const SPOTTER_SOURCE_ID = 'spotter-pins';
 const SPOTTER_LAYER_ID = 'spotter-pins-circle';
 
@@ -122,6 +129,8 @@ export function RadarMap({
   frameUrl = null,
   frameLabel,
   fastScan = true,
+  measureMode = false,
+  crossSectionMode = false,
   showLightning = true,
   showMetars = false,
   showLSR = true,
@@ -130,6 +139,8 @@ export function RadarMap({
   spotterReports = [],
   onSelectSite,
   onOpenSounding,
+  onMeasureComplete,
+  onCrossSectionCut,
   onMapClickCoordinates,
 }: RadarMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -140,6 +151,9 @@ export function RadarMap({
   const [mapReady, setMapReady] = useState(false);
   const [localSpotters, setLocalSpotters] = useState<SpotterPin[]>([]);
   const [telemetry, setTelemetry] = useState<RadarSampling | null>(null);
+
+  const measurePointsRef = useRef<[number, number][]>([]);
+  const rhiPointsRef = useRef<[number, number][]>([]);
 
   const site =
     RADAR_SITES.find((s) => s.id === radarSite || s.radarId === radarSite) ||
@@ -158,7 +172,7 @@ export function RadarMap({
     }
   };
 
-  // 1. SPC Convective Outlooks
+  // 1. SPC Outlooks
   const installSPCOutlooks = useCallback((map: MapLibreMap) => {
     fetch('/api/spc/outlooks')
       .then((res) => res.json())
@@ -526,7 +540,7 @@ export function RadarMap({
     });
   }, []);
 
-  // 9. Single-Site Radar & MRMS Severe Products (MESH / AzShear / Tilts)
+  // 9. Single-Site Radar Layer
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -619,7 +633,7 @@ export function RadarMap({
     [palette, palCurve, product, mode]
   );
 
-  // 10. On-Map WeatherWise Radar Tower Pills
+  // 10. On-Map Radar Tower Pills
   const renderWeatherWiseRadarPills = useCallback(
     (map: MapLibreMap) => {
       siteMarkersRef.current.forEach((m) => m.remove());
@@ -753,7 +767,6 @@ export function RadarMap({
       setTelemetry(null);
     });
 
-    // Right-click or shift-click for Soundings
     map.on('contextmenu', (e) => {
       e.preventDefault();
       if (onOpenSounding) {
@@ -762,7 +775,40 @@ export function RadarMap({
       }
     });
 
+    // Click handler: Cross-Section Cut, Distance Measure, or Spotter Placement
     map.on('click', (e) => {
+      // 1. Cross-Section Tool (RHI Cut)
+      if (crossSectionMode) {
+        const coords: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+        rhiPointsRef.current.push(coords);
+
+        if (rhiPointsRef.current.length === 2) {
+          const [pA, pB] = rhiPointsRef.current;
+          if (onCrossSectionCut) {
+            onCrossSectionCut(pA, pB);
+          }
+          rhiPointsRef.current = [];
+        }
+        return;
+      }
+
+      // 2. Distance Measure
+      if (measureMode) {
+        const coords: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+        measurePointsRef.current.push(coords);
+
+        if (measurePointsRef.current.length === 2) {
+          const [p1, p2] = measurePointsRef.current;
+          const { distanceNm, distanceKm } = calculatePolarCoordinates(p1[1], p1[0], p2[1], p2[0]);
+          if (onMeasureComplete) {
+            onMeasureComplete(Math.round(distanceNm * 10) / 10, Math.round(distanceKm * 0.621371 * 10) / 10);
+          }
+          measurePointsRef.current = [];
+        }
+        return;
+      }
+
+      // 3. Spotter Pin
       const coords: [number, number] = [e.lngLat.lng, e.lngLat.lat];
       if (onMapClickCoordinates) {
         onMapClickCoordinates(coords);
@@ -787,7 +833,7 @@ export function RadarMap({
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tilt]);
+  }, [tilt, measureMode, crossSectionMode]);
 
   // Mode Switcher Handler
   useEffect(() => {
@@ -926,7 +972,7 @@ export function RadarMap({
   }, [mapReady, site.radarId, product, tilt, frameUrl, fastScan, installOrUpdateRadarLayer]);
 
   return (
-    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', overflow: 'hidden', cursor: 'crosshair' }}>
+    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', overflow: 'hidden', cursor: (measureMode || crossSectionMode) ? 'crosshair' : 'default' }}>
       <div
         ref={containerRef}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
