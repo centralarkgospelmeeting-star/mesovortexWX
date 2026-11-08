@@ -58,15 +58,17 @@ export async function GET(request: Request) {
     productCode = 'DVL';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-DVL-0/{z}/{x}/{y}.png`;
   }
-  // 6. Dual-Pol CC, ZDR, KDP
+  // 6. Dual-Pol CC, ZDR, KDP (proxies/substitutes where true L3 ridge tiles unavailable)
   else if (productKey === 'cc') {
-    productCode = 'N0C';
-    tileUrl = `${IEM_TILE}/mrms::PrecipClass/{z}/{x}/{y}.png`;
+    // P0: IEM ridge processed products do not currently expose N0C as ridge tiles in our integration.
+    // Use an MRMS proxy candidate; keep substitute/provenance flags honest in the registry.
+    productCode = 'MRMS_RHOHV_PROXY';
+    tileUrl = `${IEM_TILE}/mrms::RhoHV/{z}/{x}/{y}.png`;
   } else if (productKey === 'zdr') {
-    productCode = 'N0X';
+    productCode = 'MRMS_PROXY';
     tileUrl = `${IEM_TILE}/mrms::ReflectivityAtLowestAltitude/{z}/{x}/{y}.png`;
   } else if (productKey === 'kdp') {
-    productCode = 'N0K';
+    productCode = 'MRMS_PROXY';
     tileUrl = `${IEM_TILE}/mrms::MultiSensorQPE01H/{z}/{x}/{y}.png`;
   }
 
