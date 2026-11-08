@@ -10,15 +10,16 @@ export type ApiMeta = {
 export function jsonWithMeta<T extends object>(data: T, meta: Partial<ApiMeta>, init?: ResponseInit) {
   const headers = new Headers(init?.headers);
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json; charset=utf-8');
+  const _meta: ApiMeta = {
+    fetchedAt: new Date().toISOString(),
+    source: meta.source ?? 'unknown',
+    ok: meta.ok ?? true,
+    status: meta.status,
+    error: meta.error,
+    cached: meta.cached,
+  };
   return Response.json(
-    {
-      ...data,
-      _meta: {
-        fetchedAt: new Date().toISOString(),
-        ok: true,
-        ...meta,
-      } satisfies ApiMeta,
-    },
+    { ...data, _meta },
     { ...init, headers }
   );
 }
