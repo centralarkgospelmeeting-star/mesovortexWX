@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit",
     "prepare:desktop": "node scripts/prepare-desktop.mjs",
     "dist:windows": "next build && npm run prepare:desktop && electron-builder --win nsis --x64 --publish never"
   },
