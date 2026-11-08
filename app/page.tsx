@@ -9,8 +9,11 @@ import { SynchronizedQuadView } from '../components/SynchronizedQuadView';
 import { SpotterReportModal, SpotterReport } from '../components/SpotterReportModal';
 import { PalColorTableModal, ParsedPalCurve } from '../components/PalColorTableModal';
 import { PlacefileManagerModal, ActivePlacefile } from '../components/PlacefileManagerModal';
+import { SkewTSoundingModal } from '../components/SkewTSoundingModal';
+import { ThreatMatrixPanel } from '../components/ThreatMatrixPanel';
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 import { PLACEFILE_NATION_CATALOG } from '../lib/placefile-catalog';
+import { SoundingProfile, generateThermodynamicSounding } from '../lib/skewt-engine';
 
 type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp' | 'tops' | 'vil' | 'mesh' | 'azshear';
 
@@ -30,6 +33,10 @@ export default function MesoVortexWX() {
   const [activeTab, setActiveTab] = useState<ModeTab>('Radar');
   const [tilt, setTilt] = useState('0.5');
   const [palette, setPalette] = useState<PaletteType>('radarscope');
+
+  // Sounding & Threat Matrix Modals
+  const [activeSounding, setActiveSounding] = useState<SoundingProfile | null>(null);
+  const [showThreatMatrix, setShowThreatMatrix] = useState(false);
 
   // Gibson Ridge .pal Curve State
   const [palCurve, setPalCurve] = useState<ParsedPalCurve | null>(null);
@@ -199,6 +206,7 @@ export default function MesoVortexWX() {
             showRadarPills={showRadarPills}
             spotterReports={spotterReports}
             onSelectSite={(siteId) => setRadarSite(siteId)}
+            onOpenSounding={(profile) => setActiveSounding(profile)}
             onMapClickCoordinates={(coords) => setSpotterCoords(coords)}
           />
         </div>
@@ -220,6 +228,7 @@ export default function MesoVortexWX() {
               showWatches={showWatches}
               showRadarPills={showRadarPills}
               onSelectSite={(siteId) => setRadarSite(siteId)}
+              onOpenSounding={(profile) => setActiveSounding(profile)}
             />
           </div>
         )}
@@ -283,7 +292,6 @@ export default function MesoVortexWX() {
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
               <span className="text-cyan-400 font-semibold">{productInfo?.label || product.toUpperCase()}</span>
               <span>•</span>
-              {/* Interactive Elevation Tilt Switcher */}
               <div className="flex items-center gap-1 bg-slate-900 rounded px-1.5 py-0.5 border border-white/10">
                 <span className="text-slate-500">Tilt:</span>
                 {VCP_TILTS.map((t) => (
@@ -322,51 +330,35 @@ export default function MesoVortexWX() {
               </button>
             );
           })}
-          {/* MESH Hail Swaths */}
           <button
             onClick={() => setProduct('mesh')}
             className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
-              product === 'mesh'
-                ? 'bg-pink-500 text-slate-950 shadow-[0_0_10px_rgba(236,72,153,0.6)]'
-                : 'text-pink-300 hover:bg-white/10 hover:text-white'
+              product === 'mesh' ? 'bg-pink-500 text-slate-950 shadow-[0_0_10px_rgba(236,72,153,0.6)]' : 'text-pink-300 hover:bg-white/10 hover:text-white'
             }`}
-            title="MESH: Maximum Estimated Size of Hail Swaths"
           >
             MESH
           </button>
-          {/* AzShear Rotation Tracks */}
           <button
             onClick={() => setProduct('azshear')}
             className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
-              product === 'azshear'
-                ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.6)]'
-                : 'text-red-300 hover:bg-white/10 hover:text-white'
+              product === 'azshear' ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.6)]' : 'text-red-300 hover:bg-white/10 hover:text-white'
             }`}
-            title="AzShear: Low-Level Rotation Tracks / Tornado Paths"
           >
             ROTATION
           </button>
-          {/* Echo Tops */}
           <button
             onClick={() => setProduct('tops')}
             className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
-              product === 'tops'
-                ? 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]'
-                : 'text-purple-300 hover:bg-white/10 hover:text-white'
+              product === 'tops' ? 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'text-purple-300 hover:bg-white/10 hover:text-white'
             }`}
-            title="Echo Tops: Maximum cloud tops"
           >
             TOPS
           </button>
-          {/* VIL */}
           <button
             onClick={() => setProduct('vil')}
             className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
-              product === 'vil'
-                ? 'bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
-                : 'text-amber-300 hover:bg-white/10 hover:text-white'
+              product === 'vil' ? 'bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'text-amber-300 hover:bg-white/10 hover:text-white'
             }`}
-            title="VIL: Vertically Integrated Liquid hail mass"
           >
             VIL
           </button>
@@ -375,6 +367,27 @@ export default function MesoVortexWX() {
 
       {/* 4. RIGHT-HAND FLOATING ACTION DOCK */}
       <div className="absolute right-4 top-16 z-20 flex flex-col gap-2">
+        {/* Threat Matrix Button */}
+        <button
+          onClick={() => setShowThreatMatrix(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/50 bg-red-600/30 text-red-200 shadow-xl backdrop-blur-xl hover:bg-red-600/50 transition"
+          title="Severe Threat Matrix & Risk Score (0-100)"
+        >
+          📊
+        </button>
+
+        {/* Instant Sounding at Radar Site */}
+        <button
+          onClick={() => {
+            const profile = generateThermodynamicSounding(currentSite.lat, currentSite.lon);
+            setActiveSounding(profile);
+          }}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition"
+          title="Skew-T Sounding & Hodograph at Radar Site"
+        >
+          📈
+        </button>
+
         <button
           onClick={() => setShowPlacefileModal(true)}
           className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition"
@@ -394,9 +407,7 @@ export default function MesoVortexWX() {
         <button
           onClick={() => setShowLightning((v) => !v)}
           className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showLightning
-              ? 'border-amber-400/50 bg-amber-500/20 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.35)]'
-              : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+            showLightning ? 'border-amber-400/50 bg-amber-500/20 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
           }`}
           title="Toggle Live Lightning (GOES GLM)"
         >
@@ -405,9 +416,7 @@ export default function MesoVortexWX() {
         <button
           onClick={() => setShowLSR((v) => !v)}
           className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showLSR
-              ? 'border-sky-400/50 bg-sky-500/20 text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
-              : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+            showLSR ? 'border-sky-400/50 bg-sky-500/20 text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
           }`}
           title="Toggle NWS Storm Reports (LSR)"
         >
@@ -416,9 +425,7 @@ export default function MesoVortexWX() {
         <button
           onClick={() => setShowWatches((v) => !v)}
           className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showWatches
-              ? 'border-rose-400/50 bg-rose-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.35)]'
-              : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+            showWatches ? 'border-rose-400/50 bg-rose-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
           }`}
           title="Toggle Watch Boxes"
         >
@@ -427,9 +434,7 @@ export default function MesoVortexWX() {
         <button
           onClick={() => setShowMetars((v) => !v)}
           className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showMetars
-              ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.35)]'
-              : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+            showMetars ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
           }`}
           title="Toggle Airport METAR Stations"
         >
@@ -438,9 +443,7 @@ export default function MesoVortexWX() {
         <button
           onClick={() => setShowRadarPills((v) => !v)}
           className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showRadarPills
-              ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-300'
-              : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+            showRadarPills ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-300' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
           }`}
           title="Toggle On-Map Radar Tower Pills"
         >
@@ -484,7 +487,6 @@ export default function MesoVortexWX() {
           <button
             onClick={() => stepFrame(-1)}
             className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 hover:bg-white/10"
-            title="Step Back"
           >
             ‹
           </button>
@@ -492,14 +494,12 @@ export default function MesoVortexWX() {
             onClick={() => setIsPlaying((p) => !p)}
             disabled={frames.length < 2}
             className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-600 text-white shadow-lg transition hover:bg-cyan-500 disabled:opacity-40"
-            title={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? '❚❚' : '▶'}
           </button>
           <button
             onClick={() => stepFrame(1)}
             className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 hover:bg-white/10"
-            title="Step Forward"
           >
             ›
           </button>
@@ -621,7 +621,17 @@ export default function MesoVortexWX() {
         </div>
       )}
 
-      {/* 8. GIBSON RIDGE (.pal) MODAL */}
+      {/* 8. SKEW-T SOUNDING MODAL */}
+      {activeSounding && (
+        <SkewTSoundingModal sounding={activeSounding} onClose={() => setActiveSounding(null)} />
+      )}
+
+      {/* 9. THREAT MATRIX MODAL */}
+      {showThreatMatrix && (
+        <ThreatMatrixPanel onClose={() => setShowThreatMatrix(false)} />
+      )}
+
+      {/* 10. GIBSON RIDGE (.pal) MODAL */}
       {showPalModal && (
         <PalColorTableModal
           onClose={() => setShowPalModal(false)}
@@ -632,7 +642,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 9. PLACEFILE MANAGER MODAL */}
+      {/* 11. PLACEFILE MANAGER MODAL */}
       {showPlacefileModal && (
         <PlacefileManagerModal
           placefiles={placefiles}
@@ -643,7 +653,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 10. AI ASSISTANT MODAL */}
+      {/* 12. AI ASSISTANT MODAL */}
       {showAssistant && (
         <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
           <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
@@ -655,10 +665,10 @@ export default function MesoVortexWX() {
         </div>
       )}
 
-      {/* 11. QUAD SYNCHRO VIEW MODAL */}
+      {/* 13. QUAD SYNCHRO VIEW MODAL */}
       {showQuad && <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowQuad(false)} />}
 
-      {/* 12. SPOTTER REPORT MODAL */}
+      {/* 14. SPOTTER REPORT MODAL */}
       {spotterCoords && (
         <SpotterReportModal
           currentCoords={spotterCoords}
@@ -667,7 +677,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 13. EMERGENCY SIREN AUDIO ENGINE */}
+      {/* 15. EMERGENCY SIREN AUDIO ENGINE */}
       <EmergencyAlertTone />
     </div>
   );
