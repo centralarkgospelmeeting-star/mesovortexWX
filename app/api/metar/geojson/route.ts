@@ -1,25 +1,23 @@
 import { NextResponse } from 'next/server';
+import { fetchJsonWithTimeout, errorPayload } from '../../../../lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  try {
-    // Official NOAA Aviation Weather Center Free GeoJSON METAR Feed
-    const res = await fetch('https://aviationweather.gov/api/data/metar?format=geojson', {
-      headers: {
-        'User-Agent': 'MesoVortexWX/2.0 (contact@mesovortexwx.internal)',
-      },
-      next: { revalidate: 300 }, // 5-minute cache
+  const source = 'https://aviationweather.gov/api/data/metar?format=geojson';
+  const result = await fetchJsonWithTimeout(source, {
+    headers: { 'User-Agent': 'MesoVortexWX/2.0 (contact@mesovortexwx.internal)' },
+    timeoutMs: 12000,
+  });
+
+  if (!result.ok) {
+    return NextResponse.json(errorPayload({ type: 'FeatureCollection', features: [] }, source, result.error), {
+      headers: { 'Cache-Control': 'no-store' },
     });
-
-    if (!res.ok) {
-      return NextResponse.json({ type: 'FeatureCollection', features: [] });
-    }
-
-    const data = await res.json();
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('METAR GeoJSON fetch error:', error);
-    return NextResponse.json({ type: 'FeatureCollection', features: [] });
   }
+
+  return NextResponse.json(
+    { ...result.data, _meta: { fetchedAt: new Date().toISOString(), source, ok: true } },
+    { headers: { 'Cache-Control': 'public, max-age=120, stale-while-revalidate=300' } }
+  );
 }
