@@ -12,7 +12,7 @@ import { PlacefileManagerModal, ActivePlacefile } from '../components/PlacefileM
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 import { PLACEFILE_NATION_CATALOG } from '../lib/placefile-catalog';
 
-type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp' | 'tops' | 'vil';
+type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp' | 'tops' | 'vil' | 'mesh' | 'azshear';
 
 type Frame = {
   time: string;
@@ -78,7 +78,7 @@ export default function MesoVortexWX() {
   const productInfo = RADAR_PRODUCTS.find((p) => p.key === product);
   const currentFrame = frames[frameIndex] || null;
 
-  // Load LIVE frames (Multi-Tilt Support)
+  // Load LIVE frames (Multi-Tilt + MRMS Support)
   const loadFrames = useCallback(async () => {
     setLoopLoading(true);
     try {
@@ -281,7 +281,7 @@ export default function MesoVortexWX() {
               </span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
-              <span className="text-cyan-400 font-semibold">{productInfo?.label}</span>
+              <span className="text-cyan-400 font-semibold">{productInfo?.label || product.toUpperCase()}</span>
               <span>•</span>
               {/* Interactive Elevation Tilt Switcher */}
               <div className="flex items-center gap-1 bg-slate-900 rounded px-1.5 py-0.5 border border-white/10">
@@ -304,15 +304,15 @@ export default function MesoVortexWX() {
           </div>
         </div>
 
-        {/* Product Switcher Pills (with Tops & VIL) */}
-        <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-slate-950/85 p-1 shadow-xl backdrop-blur-lg">
+        {/* Product Switcher Pills with MESH & ROTATION Tracks */}
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-slate-950/85 p-1 shadow-xl backdrop-blur-lg max-w-[340px]">
           {RADAR_PRODUCTS.map((p) => {
             const active = product === p.key;
             return (
               <button
                 key={p.key}
                 onClick={() => setProduct(p.key as RadarProduct)}
-                className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition ${
                   active
                     ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_rgba(6,182,212,0.5)]'
                     : 'text-slate-300 hover:bg-white/10 hover:text-white'
@@ -322,26 +322,51 @@ export default function MesoVortexWX() {
               </button>
             );
           })}
-          {/* Echo Tops & VIL */}
+          {/* MESH Hail Swaths */}
           <button
-            onClick={() => setProduct('tops' as any)}
+            onClick={() => setProduct('mesh')}
             className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
-              product === ('tops' as any)
+              product === 'mesh'
+                ? 'bg-pink-500 text-slate-950 shadow-[0_0_10px_rgba(236,72,153,0.6)]'
+                : 'text-pink-300 hover:bg-white/10 hover:text-white'
+            }`}
+            title="MESH: Maximum Estimated Size of Hail Swaths"
+          >
+            MESH
+          </button>
+          {/* AzShear Rotation Tracks */}
+          <button
+            onClick={() => setProduct('azshear')}
+            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
+              product === 'azshear'
+                ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.6)]'
+                : 'text-red-300 hover:bg-white/10 hover:text-white'
+            }`}
+            title="AzShear: Low-Level Rotation Tracks / Tornado Paths"
+          >
+            ROTATION
+          </button>
+          {/* Echo Tops */}
+          <button
+            onClick={() => setProduct('tops')}
+            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
+              product === 'tops'
                 ? 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]'
                 : 'text-purple-300 hover:bg-white/10 hover:text-white'
             }`}
-            title="Echo Tops: Maximum thunderstorm cloud altitude"
+            title="Echo Tops: Maximum cloud tops"
           >
             TOPS
           </button>
+          {/* VIL */}
           <button
-            onClick={() => setProduct('vil' as any)}
+            onClick={() => setProduct('vil')}
             className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
-              product === ('vil' as any)
+              product === 'vil'
                 ? 'bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
                 : 'text-amber-300 hover:bg-white/10 hover:text-white'
             }`}
-            title="Digital VIL: Vertically Integrated Liquid hail mass"
+            title="VIL: Vertically Integrated Liquid hail mass"
           >
             VIL
           </button>
@@ -512,7 +537,9 @@ export default function MesoVortexWX() {
 
       {/* 6. DYNAMIC REFLECTIVITY LEGEND SCALE */}
       <aside aria-label="Reflectivity legend" className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 flex h-6 items-center justify-between border-t border-white/10 bg-slate-950/90 px-4 text-[9px] font-mono backdrop-blur-md">
-        <span className="font-bold text-slate-400">dBZ:</span>
+        <span className="font-bold text-slate-400">
+          {product === 'mesh' ? 'HAIL (in):' : product === 'azshear' ? 'ROTATION:' : 'dBZ:'}
+        </span>
         <div className="mx-3 flex-1 h-2 rounded-full overflow-hidden flex border border-white/10">
           <div className="flex-1 bg-[#04e9e7]" />
           <div className="flex-1 bg-[#019ff4]" />
@@ -529,7 +556,11 @@ export default function MesoVortexWX() {
           <div className="flex-1 bg-[#9854c6]" />
           <div className="flex-1 bg-[#ffffff]" />
         </div>
-        <span className="text-slate-400">5 • 15 • 30 • 45 • 60 • 70+</span>
+        <span className="text-slate-400">
+          {product === 'mesh' ? '0.5" • 1.0" • 1.75" • 2.5" • 4.0"+' :
+           product === 'azshear' ? '0.005 • 0.010 • 0.015 • 0.020+ s⁻¹' :
+           '5 • 15 • 30 • 45 • 60 • 70+'}
+        </span>
       </aside>
 
       {/* 7. SETTINGS & PALETTE SWITCHER */}
