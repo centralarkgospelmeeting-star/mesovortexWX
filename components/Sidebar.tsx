@@ -1,13 +1,11 @@
 'use client';
 
 import type { Dispatch, SetStateAction } from 'react';
-import { RADAR_PRODUCTS, RADAR_SITES } from '../lib/radar-config';
-
-type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp';
+import { RADAR_PRODUCTS, RADAR_SITES, type RadarProductKey } from '../lib/radar-config';
 
 type SidebarProps = {
-  product: RadarProduct;
-  setProduct: Dispatch<SetStateAction<RadarProduct>>;
+  product: RadarProductKey | string;
+  setProduct: Dispatch<SetStateAction<any>>;
   radarSite?: string;
   setRadarSite?: (site: string) => void;
 };
@@ -53,12 +51,12 @@ export function Sidebar({ product, setProduct, radarSite = 'KLZK', setRadarSite 
       </div>
       <div className="grid grid-cols-2 gap-2 p-4">
         {RADAR_PRODUCTS.map((item) => {
-          const active = product === (item.key as RadarProduct);
+          const active = product === item.key;
           return (
             <button
               key={item.key}
-              onClick={() => setProduct(item.key as RadarProduct)}
-              title={item.description}
+              onClick={() => setProduct(item.key)}
+              title={item.sourceNote ? `${item.description} — ${item.sourceNote}` : item.description}
               className={`rounded-2xl p-3 text-left text-sm transition ${
                 active
                   ? 'bg-gradient-to-br from-cyan-900 to-blue-900 text-cyan-100 ring-1 ring-cyan-500 shadow-lg shadow-cyan-500/10'
@@ -122,5 +120,7 @@ export function Sidebar({ product, setProduct, radarSite = 'KLZK', setRadarSite 
         </select>
       </div>
     </aside>
+
+
   );
 }
