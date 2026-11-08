@@ -1,37 +1,35 @@
 import { NextResponse } from 'next/server';
+import { fetchJsonWithTimeout, errorPayload } from '../../../lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  try {
-    // Fetch active Tornado & Severe Thunderstorm Watches from NWS API
-    const res = await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert', {
-      headers: {
-        'User-Agent': 'MesoVortexWX/2.0 (contact@mesovortexwx.internal)',
-        'Accept': 'application/geo+json',
-      },
-      next: { revalidate: 60 },
+  const source = 'https://api.weather.gov/alerts/active';
+  const result = await fetchJsonWithTimeout(`${source}?status=actual&message_type=alert`, {
+    headers: {
+      'User-Agent': 'MesoVortexWX/2.0 (contact@mesovortexwx.internal)',
+      Accept: 'application/geo+json',
+    },
+    timeoutMs: 12000,
+  });
+
+  if (!result.ok) {
+    return NextResponse.json(errorPayload({ type: 'FeatureCollection', features: [] }, source, result.error), {
+      headers: { 'Cache-Control': 'no-store' },
     });
+  }
 
-    if (!res.ok) {
-      return NextResponse.json({ type: 'FeatureCollection', features: [] });
-    }
+  const watchFeatures = (result.data.features || []).filter((f: any) => {
+    const event = f.properties?.event || '';
+    return f.geometry && (event.includes('Tornado Watch') || event.includes('Severe Thunderstorm Watch'));
+  });
 
-    const data = await res.json();
-    const watchFeatures = (data.features || []).filter((f: any) => {
-      const event = f.properties?.event || '';
-      return (
-        f.geometry &&
-        (event.includes('Tornado Watch') || event.includes('Severe Thunderstorm Watch'))
-      );
-    });
-
-    return NextResponse.json({
+  return NextResponse.json(
+    {
       type: 'FeatureCollection',
       features: watchFeatures,
-    });
-  } catch (error) {
-    console.error('Watches fetch error:', error);
-    return NextResponse.json({ type: 'FeatureCollection', features: [] });
-  }
+      _meta: { fetchedAt: new Date().toISOString(), source, ok: true, count: watchFeatures.length },
+    },
+    { headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' } }
+  );
 }
