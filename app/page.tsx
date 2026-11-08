@@ -204,6 +204,23 @@ export default function MesoVortexWX() {
     return () => { cancelled = true; window.clearInterval(t); };
   }, []);
 
+  const goToLive = useCallback(() => {
+    if (frames.length > 0) {
+      setFrameIndex(frames.length - 1);
+      setIsPlaying(false);
+    }
+  }, [frames.length]);
+
+  const stepFrame = useCallback((dir: -1 | 1) => {
+    setIsPlaying(false);
+    setFrameIndex((prev) => {
+      const next = prev + dir;
+      if (next < 0) return frames.length - 1;
+      if (next >= frames.length) return 0;
+      return next;
+    });
+  }, [frames.length]);
+
   // P1 quick win: keyboard shortcuts for playback
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -234,23 +251,6 @@ export default function MesoVortexWX() {
       if (playTimerRef.current) window.clearInterval(playTimerRef.current);
     };
   }, [isPlaying, frames.length]);
-
-  const goToLive = () => {
-    if (frames.length > 0) {
-      setFrameIndex(frames.length - 1);
-      setIsPlaying(false);
-    }
-  };
-
-  const stepFrame = (dir: -1 | 1) => {
-    setIsPlaying(false);
-    setFrameIndex((prev) => {
-      const next = prev + dir;
-      if (next < 0) return frames.length - 1;
-      if (next >= frames.length) return 0;
-      return next;
-    });
-  };
 
   const handleSpotterSubmit = (report: SpotterReport) => {
     const pin: SpotterPin = {
