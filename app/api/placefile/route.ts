@@ -173,6 +173,14 @@ function parseFullGibsonRidgePlacefile(rawText: string): GeoFeature[] {
   return features;
 }
 
+function isBlockedPlacefileHost(hostname: string) {
+  const h = hostname.toLowerCase();
+  if (h === 'localhost' || h === '::1' || h.endsWith('.local')) return true;
+  if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(h)) return true;
+  return false;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const targetUrl = searchParams.get('url');
@@ -181,27 +189,41 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Missing placefile url query parameter' }, { status: 400 });
   }
 
+  let parsed: URL;
   try {
-    const res = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'MesoVortexWX/2.0 (Placefile Engine)',
-      },
-      next: { revalidate: 30 },
+    parsed = new URL(targetUrl);
+  } catch {
+    return NextResponse.json({ error: 'Invalid placefile URL' }, { status: 400 });
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) || isBlockedPlacefileHost(parsed.hostname)) {
+    return NextResponse.json({ error: 'Placefile URL is not allowed' }, { status: 400 });
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const res = await fetch(parsed.toString(), {
+      headers: { 'User-Agent': 'MesoVortexWX/2.0 (Placefile Engine)' },
+      signal: controller.signal,
+      cache: 'no-store',
     });
 
     if (!res.ok) {
-      return NextResponse.json({ type: 'FeatureCollection', features: [] });
+      return NextResponse.json({ type: 'FeatureCollection', features: [], _meta: { ok: false, status: res.status, source: parsed.hostname } }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const rawText = await res.text();
+    let rawText = await res.text();
+    if (rawText.length > 2_000_000) rawText = rawText.slice(0, 2_000_000);
     const features = parseFullGibsonRidgePlacefile(rawText);
 
-    return NextResponse.json({
-      type: 'FeatureCollection',
-      features,
-    });
-  } catch (err) {
-    console.error('Placefile download error:', err);
-    return NextResponse.json({ type: 'FeatureCollection', features: [] });
+    return NextResponse.json(
+      { type: 'FeatureCollection', features, _meta: { fetchedAt: new Date().toISOString(), ok: true, source: parsed.hostname, count: features.length } },
+      { headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' } }
+    );
+  } catch (err: any) {
+    const msg = err?.name === 'AbortError' ? 'Timeout fetching placefile' : 'Placefile download error';
+    return NextResponse.json({ type: 'FeatureCollection', features: [], _meta: { ok: false, error: msg, source: parsed.hostname } }, { headers: { 'Cache-Control': 'no-store' } });
+  } finally {
+    clearTimeout(timer);
   }
 }
