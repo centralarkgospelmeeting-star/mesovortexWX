@@ -128,14 +128,8 @@ export const RADAR_SITES = [
   { id: 'KYUX', radarId: 'YUX', name: 'Yuma, AZ', lat: 32.495, lon: -114.657, elevation: 174 },
 ] as const;
 
-export const RADAR_PRODUCTS = [
-  { key: 'ref', label: 'Reflectivity', short: 'REF', description: 'NEXRAD Level III N0Q' },
-  { key: 'vel', label: 'Velocity', short: 'VEL', description: 'NEXRAD Level III N0U' },
-  { key: 'srvel', label: 'Storm Relative Velocity', short: 'SRV', description: 'NEXRAD Level III N0S' },
-  { key: 'cc', label: 'Correlation Coefficient', short: 'CC', description: 'NEXRAD Level III N0C' },
-  { key: 'zdr', label: 'Differential Reflectivity', short: 'ZDR', description: 'NEXRAD Level III N0X' },
-  { key: 'kdp', label: 'Specific Differential Phase', short: 'KDP', description: 'NEXRAD Level III N0K' },
-] as const;
+export type { RadarProductKey, RadarProductDef, FrameProvenance } from './product-registry';
+export { RADAR_PRODUCTS, getProductDef } from './product-registry';
 
 export const NEXRAD_PRODUCT_CODES: Record<string, string> = {
   ref: 'N0Q',
