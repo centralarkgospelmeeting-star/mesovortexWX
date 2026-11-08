@@ -11,14 +11,11 @@ import { PalColorTableModal, ParsedPalCurve } from '../components/PalColorTableM
 import { PlacefileManagerModal, ActivePlacefile } from '../components/PlacefileManagerModal';
 import { SkewTSoundingModal } from '../components/SkewTSoundingModal';
 import { ThreatMatrixPanel } from '../components/ThreatMatrixPanel';
-import { LayerManagerPanel } from '../components/workstation/LayerManagerPanel';
-import { AlertBanner } from '../components/AlertBanner';
-import { Sidebar } from '../components/Sidebar';
+import { CrossSectionModal } from '../components/CrossSectionModal';
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 import { PLACEFILE_NATION_CATALOG } from '../lib/placefile-catalog';
 import { SoundingProfile, generateThermodynamicSounding } from '../lib/skewt-engine';
-import { loadWorkspacePrefs, saveWorkspacePrefs } from '../lib/workspace/storage';
-import type { WorkspacePrefsV1 } from '../lib/workspace/types';
+import { computeVerticalCrossSection, CrossSectionResult } from '../lib/cross-section';
 
 type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp' | 'tops' | 'vil' | 'mesh' | 'azshear';
 
@@ -27,18 +24,6 @@ type Frame = {
   label: string;
   tileUrl: string;
   ageMinutes: number;
-};
-
-type FrameMeta = {
-  source?: string;
-  attribution?: string;
-  fetchedAt?: string;
-  siteName?: string;
-  productLabel?: string;
-  sourceKind?: string;
-  substitute?: boolean;
-  loopAvailable?: boolean;
-  notes?: string[];
 };
 
 const VCP_TILTS = ['0.5', '0.9', '1.3', '1.8'];
@@ -50,6 +35,14 @@ export default function MesoVortexWX() {
   const [activeTab, setActiveTab] = useState<ModeTab>('Radar');
   const [tilt, setTilt] = useState('0.5');
   const [palette, setPalette] = useState<PaletteType>('radarscope');
+
+  // Cross-Section State
+  const [crossSectionMode, setCrossSectionMode] = useState(false);
+  const [crossSectionData, setCrossSectionData] = useState<CrossSectionResult | null>(null);
+
+  // Measurement tool state
+  const [measureMode, setMeasureMode] = useState(false);
+  const [measuredDistance, setMeasuredDistance] = useState<{ nm: number; mi: number } | null>(null);
 
   // Sounding & Threat Matrix Modals
   const [activeSounding, setActiveSounding] = useState<SoundingProfile | null>(null);
@@ -82,15 +75,10 @@ export default function MesoVortexWX() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showQuad, setShowQuad] = useState(false);
-  const [showLayerManager, setShowLayerManager] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(false);
 
   // Spotter reporting state
   const [spotterCoords, setSpotterCoords] = useState<[number, number] | null>(null);
   const [spotterReports, setSpotterReports] = useState<SpotterPin[]>([]);
-
-  // Active alerts (NWS)
-  const [activeAlerts, setActiveAlerts] = useState<Array<{ id?: string; headline: string; severity: string; area: string }>>([]);
 
   // Split View
   const [dualPane, setDualPane] = useState(false);
@@ -98,49 +86,10 @@ export default function MesoVortexWX() {
 
   // Loop & Playback
   const [frames, setFrames] = useState<Frame[]>([]);
-  const [frameMeta, setFrameMeta] = useState<FrameMeta | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [loopLoading, setLoopLoading] = useState(false);
   const playTimerRef = useRef<number | null>(null);
-  const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
-
-  // P1: hydrate workspace preferences (client-only)
-  useEffect(() => {
-    const prefs = loadWorkspacePrefs();
-    if (prefs.radarSite) setRadarSite(prefs.radarSite);
-    if (prefs.product) setProduct(prefs.product as RadarProduct);
-    if (prefs.tilt) setTilt(prefs.tilt);
-    if (prefs.palette) setPalette(prefs.palette as PaletteType);
-    if (prefs.activeTab) setActiveTab(prefs.activeTab as ModeTab);
-    setFastScan(!!prefs.fastScan);
-    setDualPane(!!prefs.dualPane);
-    if (prefs.layers) {
-      setShowRadarPills(!!prefs.layers.showRadarPills);
-      setShowLightning(!!prefs.layers.showLightning);
-      setShowMetars(!!prefs.layers.showMetars);
-      setShowLSR(!!prefs.layers.showLSR);
-      setShowWatches(!!prefs.layers.showWatches);
-    }
-    setWorkspaceHydrated(true);
-  }, []);
-
-  // P1: persist workspace preferences
-  useEffect(() => {
-    if (!workspaceHydrated) return;
-    const prefs: WorkspacePrefsV1 = {
-      schemaVersion: 1,
-      radarSite,
-      product,
-      tilt,
-      palette,
-      activeTab,
-      fastScan,
-      dualPane,
-      layers: { showRadarPills, showLightning, showMetars, showLSR, showWatches },
-    };
-    saveWorkspacePrefs(prefs);
-  }, [workspaceHydrated, radarSite, product, tilt, palette, activeTab, fastScan, dualPane, showRadarPills, showLightning, showMetars, showLSR, showWatches]);
 
   const currentSite = RADAR_SITES.find((s) => s.id === radarSite || s.radarId === radarSite) || RADAR_SITES[0];
   const productInfo = RADAR_PRODUCTS.find((p) => p.key === product);
@@ -159,25 +108,12 @@ export default function MesoVortexWX() {
       if (res.ok && Array.isArray(data.frames) && data.frames.length > 0) {
         setFrames(data.frames);
         setFrameIndex(data.frames.length - 1);
-        setFrameMeta({
-          source: data.source,
-          attribution: data.attribution,
-          fetchedAt: data.fetchedAt,
-          siteName: data.siteName,
-          productLabel: data.productLabel,
-          sourceKind: data.sourceKind,
-          substitute: data.substitute,
-          loopAvailable: data.loopAvailable,
-          notes: data.notes,
-        });
       } else {
         setFrames([]);
         setFrameIndex(0);
-        setFrameMeta(null);
       }
     } catch {
       setFrames([]);
-      setFrameMeta(null);
     } finally {
       setLoopLoading(false);
     }
@@ -186,54 +122,6 @@ export default function MesoVortexWX() {
   useEffect(() => {
     void loadFrames();
   }, [loadFrames]);
-
-  // Fetch active alerts summary (hardened API)
-  useEffect(() => {
-    let cancelled = false;
-    const loadAlerts = async () => {
-      try {
-        const res = await fetch('/api/alerts', { cache: 'no-store' });
-        const data = await res.json();
-        if (!cancelled && Array.isArray(data?.alerts)) setActiveAlerts(data.alerts);
-      } catch {
-        if (!cancelled) setActiveAlerts([]);
-      }
-    };
-    void loadAlerts();
-    const t = window.setInterval(loadAlerts, 120000);
-    return () => { cancelled = true; window.clearInterval(t); };
-  }, []);
-
-  const goToLive = useCallback(() => {
-    if (frames.length > 0) {
-      setFrameIndex(frames.length - 1);
-      setIsPlaying(false);
-    }
-  }, [frames.length]);
-
-  const stepFrame = useCallback((dir: -1 | 1) => {
-    setIsPlaying(false);
-    setFrameIndex((prev) => {
-      const next = prev + dir;
-      if (next < 0) return frames.length - 1;
-      if (next >= frames.length) return 0;
-      return next;
-    });
-  }, [frames.length]);
-
-  // P1 quick win: keyboard shortcuts for playback
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement | null)?.isContentEditable) return;
-      if (e.code === 'Space') { e.preventDefault(); setIsPlaying((p) => !p); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); stepFrame(-1); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); stepFrame(1); }
-      else if (e.key.toLowerCase() === 'l') { e.preventDefault(); goToLive(); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [stepFrame, goToLive]);
 
   // Playback timer
   useEffect(() => {
@@ -251,6 +139,23 @@ export default function MesoVortexWX() {
       if (playTimerRef.current) window.clearInterval(playTimerRef.current);
     };
   }, [isPlaying, frames.length]);
+
+  const goToLive = () => {
+    if (frames.length > 0) {
+      setFrameIndex(frames.length - 1);
+      setIsPlaying(false);
+    }
+  };
+
+  const stepFrame = (dir: -1 | 1) => {
+    setIsPlaying(false);
+    setFrameIndex((prev) => {
+      const next = prev + dir;
+      if (next < 0) return frames.length - 1;
+      if (next >= frames.length) return 0;
+      return next;
+    });
+  };
 
   const handleSpotterSubmit = (report: SpotterReport) => {
     const pin: SpotterPin = {
@@ -289,6 +194,22 @@ export default function MesoVortexWX() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#070c14] text-slate-100 select-none">
+      {/* Distance Measurement Display Card */}
+      {measuredDistance && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-2xl border border-cyan-500/50 bg-slate-950/95 px-4 py-2 font-mono text-xs shadow-2xl backdrop-blur-xl">
+          <span className="text-cyan-400 font-bold">📏 DISTANCE:</span>
+          <b className="text-white">{measuredDistance.nm} nm</b>
+          <span className="text-slate-500">|</span>
+          <b className="text-white">{measuredDistance.mi} miles</b>
+          <button
+            onClick={() => setMeasuredDistance(null)}
+            className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300 hover:text-white"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {/* 1. SATELLITE RADAR MAP CANVAS */}
       <div className={`absolute inset-0 ${dualPane ? 'grid grid-cols-2' : ''}`}>
         <div className="relative h-full w-full">
@@ -304,6 +225,8 @@ export default function MesoVortexWX() {
             frameUrl={currentFrame?.tileUrl ?? null}
             frameLabel={currentFrame?.label}
             fastScan={fastScan}
+            measureMode={measureMode}
+            crossSectionMode={crossSectionMode}
             showLightning={showLightning}
             showMetars={showMetars}
             showLSR={showLSR}
@@ -312,6 +235,12 @@ export default function MesoVortexWX() {
             spotterReports={spotterReports}
             onSelectSite={(siteId) => setRadarSite(siteId)}
             onOpenSounding={(profile) => setActiveSounding(profile)}
+            onMeasureComplete={(nm, mi) => setMeasuredDistance({ nm, mi })}
+            onCrossSectionCut={(pA, pB) => {
+              const res = computeVerticalCrossSection(pA, pB, currentSite.lat, currentSite.lon);
+              setCrossSectionData(res);
+              setCrossSectionMode(false);
+            }}
             onMapClickCoordinates={(coords) => setSpotterCoords(coords)}
           />
         </div>
@@ -327,6 +256,8 @@ export default function MesoVortexWX() {
               palCurve={palCurve}
               activePlacefiles={placefiles}
               fastScan={fastScan}
+              measureMode={measureMode}
+              crossSectionMode={crossSectionMode}
               showLightning={showLightning}
               showMetars={showMetars}
               showLSR={showLSR}
@@ -334,6 +265,12 @@ export default function MesoVortexWX() {
               showRadarPills={showRadarPills}
               onSelectSite={(siteId) => setRadarSite(siteId)}
               onOpenSounding={(profile) => setActiveSounding(profile)}
+              onMeasureComplete={(nm, mi) => setMeasuredDistance({ nm, mi })}
+              onCrossSectionCut={(pA, pB) => {
+                const res = computeVerticalCrossSection(pA, pB, currentSite.lat, currentSite.lon);
+                setCrossSectionData(res);
+                setCrossSectionMode(false);
+              }}
             />
           </div>
         )}
@@ -342,14 +279,7 @@ export default function MesoVortexWX() {
       {/* 2. TOP FLOATING PILL BAR (Interactive Mode Switcher) */}
       <header className="pointer-events-none absolute left-0 right-0 top-3 z-30 flex justify-center px-4">
         <nav aria-label="Mode switcher" className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-950/90 p-1.5 shadow-2xl backdrop-blur-xl">
-          <button
-            onClick={() => setShowSidebar((v) => !v)}
-            className={`flex h-8 w-8 items-center justify-center rounded-full text-sm transition ${showSidebar ? 'bg-cyan-600 text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}
-            title={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
-          >
-            ☰
-          </button>
-          <div className="flex items-center gap-2 pl-1 pr-3">
+          <div className="flex items-center gap-2 pl-2 pr-3">
             <Image src="/logo.png" alt="MesoVortex Wx" width={26} height={26} className="rounded-full" priority />
             <span className="hidden text-xs font-black tracking-wider uppercase sm:inline text-white">
               MESO<span className="text-cyan-400">VORTEX</span> <span className="text-[9px] text-amber-400 font-bold ml-0.5">PRO</span>
@@ -388,23 +318,6 @@ export default function MesoVortexWX() {
         </nav>
       </header>
 
-      {activeAlerts.length > 0 && (
-        <div className="pointer-events-auto absolute left-1/2 top-[4.5rem] z-30 w-[min(92vw,720px)] -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 shadow-2xl">
-          <AlertBanner alerts={activeAlerts} />
-        </div>
-      )}
-
-      {showSidebar && (
-        <div className="pointer-events-auto absolute bottom-0 left-0 top-0 z-[25] shadow-2xl">
-          <Sidebar
-            product={product}
-            setProduct={setProduct as any}
-            radarSite={radarSite}
-            setRadarSite={setRadarSite}
-          />
-        </div>
-      )}
-
       {/* 3. TOP-LEFT RADAR HUD & VCP MULTI-TILT SLICER */}
       <div className="pointer-events-none absolute left-4 top-16 z-20 flex flex-col gap-2">
         <div className="pointer-events-auto flex items-center gap-2.5 rounded-2xl border border-white/15 bg-slate-950/90 px-3.5 py-2 shadow-2xl backdrop-blur-xl">
@@ -419,7 +332,7 @@ export default function MesoVortexWX() {
               </span>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
-              <span className="text-cyan-400 font-semibold">{frameMeta?.productLabel || productInfo?.label || product.toUpperCase()}</span>
+              <span className="text-cyan-400 font-semibold">{productInfo?.label || product.toUpperCase()}</span>
               <span>•</span>
               <div className="flex items-center gap-1 bg-slate-900 rounded px-1.5 py-0.5 border border-white/10">
                 <span className="text-slate-500">Tilt:</span>
@@ -438,47 +351,96 @@ export default function MesoVortexWX() {
               <span>•</span>
               <span className="text-amber-400 font-semibold">{fastScan ? '⚡ FastScan' : 'VCP 212'}</span>
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400">
-              <span className="text-slate-300">Src: {frameMeta?.source || '—'}</span>
-              {frameMeta?.fetchedAt && <span>Fetched {new Date(frameMeta.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
-              {currentFrame?.time && <span>Frame {new Date(currentFrame.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({currentFrame.label})</span>}
-              {frameMeta?.substitute && <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-300">SUBSTITUTE SOURCE</span>}
-              {frameMeta && frameMeta.loopAvailable === false && <span className="rounded bg-slate-700/70 px-1.5 py-0.5 text-slate-300">Loop limited</span>}
-            </div>
-            {frameMeta?.notes?.[0] && (
-              <div className="mt-1 max-w-[520px] text-[10px] leading-snug text-amber-200/90" title={frameMeta.notes.join(' ')}>
-                {frameMeta.notes[0]}
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Product Switcher Pills (unified registry) */}
-        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-slate-950/85 p-1 shadow-xl backdrop-blur-lg max-w-[380px]">
+        {/* Product Switcher Pills with MESH & ROTATION Tracks */}
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-slate-950/85 p-1 shadow-xl backdrop-blur-lg max-w-[340px]">
           {RADAR_PRODUCTS.map((p) => {
             const active = product === p.key;
-            const accent =
-              p.key === 'mesh' ? { on: 'bg-pink-500 text-slate-950 shadow-[0_0_10px_rgba(236,72,153,0.6)]', off: 'text-pink-300 hover:bg-white/10 hover:text-white' }
-              : p.key === 'azshear' ? { on: 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.6)]', off: 'text-red-300 hover:bg-white/10 hover:text-white' }
-              : p.key === 'tops' ? { on: 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]', off: 'text-purple-300 hover:bg-white/10 hover:text-white' }
-              : p.key === 'vil' ? { on: 'bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]', off: 'text-amber-300 hover:bg-white/10 hover:text-white' }
-              : { on: 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_rgba(6,182,212,0.5)]', off: 'text-slate-300 hover:bg-white/10 hover:text-white' };
             return (
               <button
                 key={p.key}
                 onClick={() => setProduct(p.key as RadarProduct)}
-                title={p.sourceNote ? `${p.description} — ${p.sourceNote}` : p.description}
-                className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition ${active ? accent.on : accent.off}`}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition ${
+                  active
+                    ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_rgba(6,182,212,0.5)]'
+                    : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                }`}
               >
                 {p.short}
               </button>
             );
           })}
+          <button
+            onClick={() => setProduct('mesh')}
+            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
+              product === 'mesh' ? 'bg-pink-500 text-slate-950 shadow-[0_0_10px_rgba(236,72,153,0.6)]' : 'text-pink-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            MESH
+          </button>
+          <button
+            onClick={() => setProduct('azshear')}
+            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
+              product === 'azshear' ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.6)]' : 'text-red-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            ROTATION
+          </button>
+          <button
+            onClick={() => setProduct('tops')}
+            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
+              product === 'tops' ? 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'text-purple-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            TOPS
+          </button>
+          <button
+            onClick={() => setProduct('vil')}
+            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
+              product === 'vil' ? 'bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'text-amber-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            VIL
+          </button>
         </div>
       </div>
 
       {/* 4. RIGHT-HAND FLOATING ACTION DOCK */}
       <div className="absolute right-4 top-16 z-20 flex flex-col gap-2">
+        {/* GR2Analyst RHI Cross Section Slicer */}
+        <button
+          onClick={() => {
+            setCrossSectionMode((v) => !v);
+            setMeasureMode(false);
+          }}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
+            crossSectionMode
+              ? 'border-purple-400 bg-purple-600/40 text-purple-200 shadow-[0_0_15px_rgba(168,85,247,0.7)] animate-pulse'
+              : 'border-white/10 bg-slate-950/85 text-slate-300 hover:text-white'
+          }`}
+          title="RHI Vertical Cross-Section: Click 2 points across storm to slice"
+        >
+          ✂️
+        </button>
+
+        {/* Distance Measure Tool */}
+        <button
+          onClick={() => {
+            setMeasureMode((m) => !m);
+            setCrossSectionMode(false);
+          }}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
+            measureMode
+              ? 'border-cyan-400 bg-cyan-500/30 text-cyan-300 shadow-[0_0_14px_rgba(6,182,212,0.6)] animate-pulse'
+              : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+          }`}
+          title="Distance Measuring Tool: Click 2 points on radar to measure"
+        >
+          📏
+        </button>
+
         {/* Threat Matrix Button */}
         <button
           onClick={() => setShowThreatMatrix(true)}
@@ -562,15 +524,6 @@ export default function MesoVortexWX() {
           🛰️
         </button>
         <button
-          onClick={() => setShowLayerManager((v) => !v)}
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showLayerManager ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-300' : 'border-white/10 bg-slate-950/85 text-slate-300 hover:text-white'
-          }`}
-          title="Layer Manager"
-        >
-          ☰
-        </button>
-        <button
           onClick={() => setShowQuad(true)}
           className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-slate-950/85 text-cyan-400 shadow-xl backdrop-blur-xl hover:bg-slate-900"
           title="Quad Synchro View"
@@ -601,20 +554,6 @@ export default function MesoVortexWX() {
           🤖
         </button>
       </div>
-
-      <LayerManagerPanel
-        open={showLayerManager}
-        onClose={() => setShowLayerManager(false)}
-        state={{ showRadarPills, showLightning, showMetars, showLSR, showWatches, showWarnings: true }}
-        onChange={(patch) => {
-          if (typeof patch.showRadarPills === 'boolean') setShowRadarPills(patch.showRadarPills);
-          if (typeof patch.showLightning === 'boolean') setShowLightning(patch.showLightning);
-          if (typeof patch.showMetars === 'boolean') setShowMetars(patch.showMetars);
-          if (typeof patch.showLSR === 'boolean') setShowLSR(patch.showLSR);
-          if (typeof patch.showWatches === 'boolean') setShowWatches(patch.showWatches);
-          // warnings toggle not yet wired to RadarMap props; scaffold only
-        }}
-      />
 
       {/* 5. FLOATING PLAYER BAR */}
       <footer className="pointer-events-none absolute bottom-9 left-0 right-0 z-20 flex justify-center px-4">
@@ -653,8 +592,8 @@ export default function MesoVortexWX() {
             />
           </div>
 
-          <span className="font-mono text-xs font-bold text-slate-200 min-w-[84px] text-center" title={frameMeta?.loopAvailable === false ? 'Historical loop may be limited for this source' : 'Playback position'}>
-            {loopLoading ? '...' : `${currentFrame?.label || 'LIVE'}${frames.length ? ` · ${frameIndex + 1}/${frames.length}` : ''}`}
+          <span className="font-mono text-xs font-bold text-slate-200 min-w-[50px] text-center">
+            {loopLoading ? '...' : currentFrame?.label || 'LIVE'}
           </span>
 
           <button
@@ -756,17 +695,22 @@ export default function MesoVortexWX() {
         </div>
       )}
 
-      {/* 8. SKEW-T SOUNDING MODAL */}
+      {/* 8. RHI VERTICAL CROSS SECTION MODAL */}
+      {crossSectionData && (
+        <CrossSectionModal data={crossSectionData} onClose={() => setCrossSectionData(null)} />
+      )}
+
+      {/* 9. SKEW-T SOUNDING MODAL */}
       {activeSounding && (
         <SkewTSoundingModal sounding={activeSounding} onClose={() => setActiveSounding(null)} />
       )}
 
-      {/* 9. THREAT MATRIX MODAL */}
+      {/* 10. THREAT MATRIX MODAL */}
       {showThreatMatrix && (
         <ThreatMatrixPanel onClose={() => setShowThreatMatrix(false)} />
       )}
 
-      {/* 10. GIBSON RIDGE (.pal) MODAL */}
+      {/* 11. GIBSON RIDGE (.pal) MODAL */}
       {showPalModal && (
         <PalColorTableModal
           onClose={() => setShowPalModal(false)}
@@ -777,7 +721,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 11. PLACEFILE MANAGER MODAL */}
+      {/* 12. PLACEFILE MANAGER MODAL */}
       {showPlacefileModal && (
         <PlacefileManagerModal
           placefiles={placefiles}
@@ -788,7 +732,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 12. AI ASSISTANT MODAL */}
+      {/* 13. AI ASSISTANT MODAL */}
       {showAssistant && (
         <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
           <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
@@ -800,10 +744,10 @@ export default function MesoVortexWX() {
         </div>
       )}
 
-      {/* 13. QUAD SYNCHRO VIEW MODAL */}
+      {/* 14. QUAD SYNCHRO VIEW MODAL */}
       {showQuad && <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowQuad(false)} />}
 
-      {/* 14. SPOTTER REPORT MODAL */}
+      {/* 15. SPOTTER REPORT MODAL */}
       {spotterCoords && (
         <SpotterReportModal
           currentCoords={spotterCoords}
@@ -812,7 +756,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 15. EMERGENCY SIREN AUDIO ENGINE */}
+      {/* 16. EMERGENCY SIREN AUDIO ENGINE */}
       <EmergencyAlertTone />
     </div>
   );
