@@ -8,6 +8,7 @@ import { RADAR_SITES } from '../lib/radar-config';
 import { ParsedPalCurve } from './PalColorTableModal';
 import { ActivePlacefile } from './PlacefileManagerModal';
 import { calculatePolarCoordinates, calculateBeamHeight, classifyStormGate, RadarSampling } from '../lib/radar-physics';
+import { generateThermodynamicSounding, SoundingProfile } from '../lib/skewt-engine';
 
 export type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
 export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
@@ -43,6 +44,7 @@ type RadarMapProps = {
   showRadarPills?: boolean;
   spotterReports?: SpotterPin[];
   onSelectSite?: (siteId: string) => void;
+  onOpenSounding?: (profile: SoundingProfile) => void;
   onMapClickCoordinates?: (coords: [number, number]) => void;
 };
 
@@ -127,6 +129,7 @@ export function RadarMap({
   showRadarPills = true,
   spotterReports = [],
   onSelectSite,
+  onOpenSounding,
   onMapClickCoordinates,
 }: RadarMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -546,12 +549,10 @@ export function RadarMap({
         let hueRotate = 0;
 
         if (product === 'mesh') {
-          // Hail Swath Emphasis (Neon Cyan into Intense Magenta)
           contrast = 0.65;
           saturation = 0.9;
           hueRotate = -30;
         } else if (product === 'azshear') {
-          // Low-Level Rotation Swaths (Neon Yellow into Hot Crimson)
           contrast = 0.8;
           saturation = 1.0;
           hueRotate = 110;
@@ -691,7 +692,6 @@ export function RadarMap({
       installPlacefiles(map, activePlacefiles);
     });
 
-    // Hover sampler with MESH Hail and Rotation Track recognition
     map.on('mousemove', (e) => {
       const { distanceKm, distanceNm, azimuthDeg } = calculatePolarCoordinates(
         site.lat,
@@ -724,7 +724,6 @@ export function RadarMap({
 
       const classification = classifyStormGate(product, simulatedVal);
 
-      // Custom badge override for MESH and AzShear
       let badge = classification.badge;
       let hazardLevel = classification.hazardLevel;
 
@@ -752,6 +751,15 @@ export function RadarMap({
 
     map.on('mouseout', () => {
       setTelemetry(null);
+    });
+
+    // Right-click or shift-click for Soundings
+    map.on('contextmenu', (e) => {
+      e.preventDefault();
+      if (onOpenSounding) {
+        const profile = generateThermodynamicSounding(e.lngLat.lat, e.lngLat.lng);
+        onOpenSounding(profile);
+      }
     });
 
     map.on('click', (e) => {
@@ -958,6 +966,9 @@ export function RadarMap({
               <span className="text-slate-500">{product.toUpperCase()}:</span>{' '}
               <b className="text-emerald-400">{telemetry.estimatedValue} {telemetry.unit}</b>
             </div>
+          </div>
+          <div className="text-[9px] text-slate-500 italic mt-0.5 border-t border-white/5 pt-1">
+            Right-click anywhere to generate Skew-T Sounding &amp; Hodograph
           </div>
         </div>
       )}
