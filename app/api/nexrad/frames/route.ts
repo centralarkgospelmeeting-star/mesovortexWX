@@ -1,4 +1,4 @@
-import { NEXRAD_PRODUCT_CODES, RADAR_SITES } from '../../../../lib/radar-config';
+import { RADAR_SITES } from '../../../../lib/radar-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,48 +8,64 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const siteId = (searchParams.get('site') ?? 'LZK').toUpperCase();
   const productKey = (searchParams.get('product') ?? 'ref').toLowerCase();
+  const tilt = searchParams.get('tilt') ?? '0.5';
 
   const site =
     RADAR_SITES.find((s) => s.id === siteId || s.radarId === siteId) ||
     RADAR_SITES.find((s) => s.radarId === siteId.replace(/^K/, '')) ||
     RADAR_SITES[0];
 
-  // 1. Dual-Pol product mapping
-  // Note: For CC, ZDR, and KDP, IEM serves composite & MRMS Dual-Pol feeds
-  let tileUrl = '';
   let productCode = 'N0B';
+  let tileUrl = '';
 
-  if (productKey === 'cc') {
+  // 1. Multi-Tilt Reflectivity Routing (VCP Elevation Cuts)
+  if (productKey === 'ref') {
+    if (tilt === '0.9') productCode = 'N1B';
+    else if (tilt === '1.3') productCode = 'N2B';
+    else if (tilt === '1.8') productCode = 'N3B';
+    else productCode = 'N0B'; // 0.5°
+    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
+  }
+  // 2. Multi-Tilt Velocity Routing
+  else if (productKey === 'vel') {
+    if (tilt === '0.9') productCode = 'N1U';
+    else if (tilt === '1.3') productCode = 'N2U';
+    else if (tilt === '1.8') productCode = 'N3U';
+    else productCode = 'N0U'; // 0.5°
+    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
+  }
+  // 3. Storm Relative Motion (SRM)
+  else if (productKey === 'srvel') {
+    productCode = 'N0S';
+    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0S-0/{z}/{x}/{y}.png`;
+  }
+  // 4. Digital Echo Tops (Max thunderstorm cloud height)
+  else if (productKey === 'tops') {
+    productCode = 'EET';
+    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-EET-0/{z}/{x}/{y}.png`;
+  }
+  // 5. Digital Vertically Integrated Liquid (Hail Mass)
+  else if (productKey === 'vil') {
+    productCode = 'DVL';
+    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-DVL-0/{z}/{x}/{y}.png`;
+  }
+  // 6. Dual-Pol CC, ZDR, KDP
+  else if (productKey === 'cc') {
     productCode = 'N0C';
-    // Dual-Pol Correlation Coefficient (TDS Debris Detection)
     tileUrl = `${IEM_TILE}/mrms::PrecipClass/{z}/{x}/{y}.png`;
   } else if (productKey === 'zdr') {
     productCode = 'N0X';
-    // Dual-Pol Differential Reflectivity (Hail Sizing)
     tileUrl = `${IEM_TILE}/mrms::ReflectivityAtLowestAltitude/{z}/{x}/{y}.png`;
   } else if (productKey === 'kdp') {
     productCode = 'N0K';
-    // Specific Differential Phase (Heavy Rain / Flash Flood)
     tileUrl = `${IEM_TILE}/mrms::MultiSensorQPE01H/{z}/{x}/{y}.png`;
-  } else if (productKey === 'vel') {
-    productCode = 'N0U';
-    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0U-0/{z}/{x}/{y}.png`;
-  } else if (productKey === 'srvel') {
-    productCode = 'N0S';
-    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0S-0/{z}/{x}/{y}.png`;
-  } else {
-    // Default: Reflectivity
-    productCode = 'N0B';
-    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0B-0/{z}/{x}/{y}.png`;
   }
 
-  // Backup CONUS composite
   const compositeLatest = `${IEM_TILE}/nexrad-n0q-900913/{z}/{x}/{y}.png`;
 
   const now = new Date();
   const frames: { time: string; label: string; tileUrl: string; ageMinutes: number }[] = [];
 
-  // Generate timeline loop frames
   for (let i = 10; i >= 1; i--) {
     const date = new Date(now.getTime() - i * 5 * 60 * 1000);
     date.setUTCMinutes(Math.floor(date.getUTCMinutes() / 5) * 5, 0, 0);
@@ -84,11 +100,12 @@ export async function GET(request: Request) {
 
   return Response.json(
     {
-      source: 'IEM RIDGE & Dual-Pol Feed',
+      source: 'IEM Multi-Tilt Level III Ingest',
       station: site.radarId,
       siteId: site.id,
       product: productCode,
       productKey,
+      tilt,
       scheme: 'xyz',
       frames,
       count: frames.length,
