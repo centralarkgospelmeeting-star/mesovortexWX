@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchJsonWithTimeout, errorPayload } from '../../../lib/api-utils';
+import { fetchJsonWithTimeout, errorPayload } from '../../../../lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
