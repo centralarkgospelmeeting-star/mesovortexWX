@@ -28,6 +28,7 @@ type RadarMapProps = {
   product: string;
   radarSite?: string;
   mode?: ModeTab;
+  tilt?: string;
   mapType?: MapType;
   palette?: PaletteType;
   palCurve?: ParsedPalCurve | null;
@@ -112,6 +113,7 @@ export function RadarMap({
   product,
   radarSite = 'KLZK',
   mode = 'Radar',
+  tilt = '0.5',
   palette = 'nws',
   palCurve = null,
   activePlacefiles = [],
@@ -523,7 +525,7 @@ export function RadarMap({
     });
   }, []);
 
-  // 9. Single-Site Radar Layer
+  // 9. Single-Site Radar Layer (Multi-Tilt Support)
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -681,9 +683,7 @@ export function RadarMap({
       installPlacefiles(map, activePlacefiles);
     });
 
-    // -------------------------------------------------------------
-    // REAL-TIME RADAR GATE HOVER SAMPLER & BEAM TELEMETRY
-    // -------------------------------------------------------------
+    // Hover sampler with Tilt-aware Beam Altitude
     map.on('mousemove', (e) => {
       const { distanceKm, distanceNm, azimuthDeg } = calculatePolarCoordinates(
         site.lat,
@@ -692,7 +692,8 @@ export function RadarMap({
         e.lngLat.lng
       );
 
-      const beamHeightFt = calculateBeamHeight(distanceKm, 0.5, site.elevation || 200);
+      const tiltAngle = parseFloat(tilt) || 0.5;
+      const beamHeightFt = calculateBeamHeight(distanceKm, tiltAngle, site.elevation || 200);
 
       let simulatedVal = 0;
       if (product === 'ref') simulatedVal = Math.max(5, Math.min(75, Math.round(75 - distanceNm * 0.4)));
@@ -713,7 +714,6 @@ export function RadarMap({
       });
     });
 
-    // Valid MapLibre map canvas mouseout event
     map.on('mouseout', () => {
       setTelemetry(null);
     });
@@ -743,7 +743,7 @@ export function RadarMap({
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tilt]);
 
   // Mode Switcher Handler
   useEffect(() => {
@@ -858,7 +858,7 @@ export function RadarMap({
     const fetchLatestScan = () => {
       const cacheBuster = `&_cb=${Date.now()}`;
       fetch(
-        `/api/nexrad/frames?site=${encodeURIComponent(site.radarId)}&product=${encodeURIComponent(product)}${cacheBuster}`,
+        `/api/nexrad/frames?site=${encodeURIComponent(site.radarId)}&product=${encodeURIComponent(product)}&tilt=${encodeURIComponent(tilt)}${cacheBuster}`,
         { cache: 'no-store' }
       )
         .then((res) => res.json())
@@ -879,7 +879,7 @@ export function RadarMap({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [mapReady, site.radarId, product, frameUrl, fastScan, installOrUpdateRadarLayer]);
+  }, [mapReady, site.radarId, product, tilt, frameUrl, fastScan, installOrUpdateRadarLayer]);
 
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', overflow: 'hidden', cursor: 'crosshair' }}>
@@ -893,7 +893,7 @@ export function RadarMap({
         <div className="pointer-events-none absolute bottom-16 left-4 z-30 flex flex-col gap-1 rounded-2xl border border-white/15 bg-slate-950/90 p-3 shadow-2xl backdrop-blur-xl font-mono text-xs animate-fade-in">
           <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              GATE TELEMETRY · {site.radarId}
+              GATE TELEMETRY · {site.radarId} ({tilt}°)
             </span>
             <span className={`rounded px-1.5 py-0.2 text-[9px] font-black uppercase ${
               telemetry.hazardLevel === 'tornadic' ? 'bg-purple-600 text-white animate-pulse' :
