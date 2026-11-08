@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MesoVortexWX Dashboard</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0b1220; color: #e2e8f0; margin: 0; padding: 16px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  .muted { color: #94a3b8; font-size: 0.85rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: #111a2e; border: 1px solid #1e293b; border-radius: 10px; padding: 14px; }
+  img { width: 100%; border-radius: 8px; background: #000; }
+  input { background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 4px 6px; }
+  button { background: #2563eb; color: white; border: 0; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  .alert { border-left: 4px solid #f59e0b; padding: 8px 10px; margin: 8px 0; background: #0f172a; border-radius: 4px; }
+  .alert.tor { border-color: #dc2626; }
+  .alert.tsw { border-color: #eab308; }
+  .alert.ffw { border-color: #10b981; }
+</style>
+</head>
+<body>
+<h1>MesoVortexWX: Phase 1</h1>
+<div class="muted" id="status">Loading radar data...</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Radar: <span id="site">-</span></h2>
+    <img id="radar" alt="Radar reflectivity image">
+    <p class="muted" id="radarInfo"></p>
+    <p class="muted">The image covers about 150 km around the radar. It is not yet placed on a map.</p>
+  </div>
+
+  <div class="card">
+    <h2>Active NWS alerts</h2>
+    <p class="muted">
+      Latitude <input id="lat" value="34.7465" size="9">
+      Longitude <input id="lon" value="-92.2896" size="9">
+      <button id="check">Check</button>
+    </p>
+    <div id="alerts"></div>
+    <p class="muted">Source: National Weather Service (api.weather.gov). Warnings are shown exactly as issued.</p>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+  function fmt(iso) {
+    return iso ? new Date(iso).toLocaleString() : "unknown";
+  }
+
+  function loadRadar() {
+    const d = window.RADAR_DATA;
+    if (!d) {
+      document.getElementById("status").textContent =
+        "No radar data found. Run build_dashboard.py first.";
+      return;
+    }
+    document.getElementById("site").textContent = d.site;
+    document.getElementById("radar").src = d.image;
+    document.getElementById("radarInfo").textContent =
+      "Scan time: " + fmt(d.scan_time_utc) +
+      " | Built: " + fmt(d.built_at_utc) +
+      " | Source: " + d.sources.radar;
+    document.getElementById("status").textContent = "Radar data loaded.";
+  }
+
+  function alertClass(event) {
+    if (event === "Tornado Warning") return "tor";
+    if (event === "Severe Thunderstorm Warning") return "tsw";
+    if (event === "Flash Flood Warning") return "ffw";
+    return "";
+  }
+
+  async function loadAlerts() {
+    const lat = document.getElementById("lat").value.trim();
+    const lon = document.getElementById("lon").value.trim();
+    const box = document.getElementById("alerts");
+    box.textContent = "Checking...";
+    try {
+      const url = "https://api.weather.gov/alerts/active?point=" +
+                  encodeURIComponent(lat + "," + lon);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      const feats = data.features || [];
+      box.textContent = "";
+      if (feats.length === 0) {
+        box.textContent = "No active alerts for this location.";
+        return;
+      }
+      feats.forEach(f => {
+        const p = f.properties;
+        const div = document.createElement("div");
+        div.className = "alert " + alertClass(p.event);
+        const title = document.createElement("b");
+        title.textContent = p.event + " (" + (p.severity || "unknown") + ")";
+        const head = document.createElement("div");
+        head.textContent = p.headline || "";
+        const meta = document.createElement("div");
+        meta.className = "muted";
+        meta.textContent = "Expires: " + fmt(p.expires) +
+                           " | Source: " + (p.senderName || "NWS");
+        div.append(title, head, meta);
+        box.append(div);
+      });
+    } catch (err) {
+      box.textContent = "Could not reach the NWS alerts service (" + err.message + ").";
+    }
+  }
+
+  document.getElementById("check").addEventListener("click", loadAlerts);
+  loadRadar();
+  loadAlerts();
+</script>
+</body>
+</html>
