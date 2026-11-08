@@ -1,10 +1,10 @@
 'use client';
 
 import type { Dispatch, SetStateAction } from 'react';
-import { RADAR_PRODUCTS, RADAR_SITES, type RadarProductKey } from '../lib/radar-config';
+import { RADAR_PRODUCTS, RADAR_SITES } from '../lib/radar-config';
 
 type SidebarProps = {
-  product: RadarProductKey | string;
+  product: string;
   setProduct: Dispatch<SetStateAction<any>>;
   radarSite?: string;
   setRadarSite?: (site: string) => void;
