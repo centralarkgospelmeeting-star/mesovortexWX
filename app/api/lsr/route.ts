@@ -1,23 +1,23 @@
 import { NextResponse } from 'next/server';
+import { fetchJsonWithTimeout, errorPayload } from '../../../lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  try {
-    // Official Iowa Environmental Mesonet (IEM) real-time LSR GeoJSON feed
-    const res = await fetch('https://mesonet.agron.iastate.edu/geojson/lsr.geojson', {
-      headers: { 'User-Agent': 'MesoVortexWX/2.0' },
-      next: { revalidate: 60 }, // 1-minute cache
+  const source = 'https://mesonet.agron.iastate.edu/geojson/lsr.geojson';
+  const result = await fetchJsonWithTimeout(source, {
+    headers: { 'User-Agent': 'MesoVortexWX/2.0' },
+    timeoutMs: 10000,
+  });
+
+  if (!result.ok) {
+    return NextResponse.json(errorPayload({ type: 'FeatureCollection', features: [] }, source, result.error), {
+      headers: { 'Cache-Control': 'no-store' },
     });
-
-    if (!res.ok) {
-      return NextResponse.json({ type: 'FeatureCollection', features: [] });
-    }
-
-    const data = await res.json();
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('LSR fetch error:', error);
-    return NextResponse.json({ type: 'FeatureCollection', features: [] });
   }
+
+  return NextResponse.json(
+    { ...result.data, _meta: { fetchedAt: new Date().toISOString(), source, ok: true } },
+    { headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' } }
+  );
 }
