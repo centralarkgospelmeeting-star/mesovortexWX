@@ -694,7 +694,6 @@ export function RadarMap({
 
       const beamHeightFt = calculateBeamHeight(distanceKm, 0.5, site.elevation || 200);
 
-      // Estimate return value based on distance and storm proximity
       let simulatedVal = 0;
       if (product === 'ref') simulatedVal = Math.max(5, Math.min(75, Math.round(75 - distanceNm * 0.4)));
       else if (product === 'vel' || product === 'srvel') simulatedVal = Math.round(Math.sin((azimuthDeg * Math.PI) / 180) * 55);
@@ -714,7 +713,8 @@ export function RadarMap({
       });
     });
 
-    map.on('mouseleave', () => {
+    // Valid MapLibre map canvas mouseout event
+    map.on('mouseout', () => {
       setTelemetry(null);
     });
 
