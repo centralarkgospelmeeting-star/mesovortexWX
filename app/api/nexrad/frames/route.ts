@@ -1,4 +1,5 @@
 import { RADAR_SITES } from '../../../../lib/radar-config';
+import { getProductDef, PRODUCT_ATTRIBUTION_IEM } from '../../../../lib/product-registry';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,6 +71,11 @@ export async function GET(request: Request) {
   }
 
   const compositeLatest = `${IEM_TILE}/nexrad-n0q-900913/{z}/{x}/{y}.png`;
+  const def = getProductDef(productKey);
+  const loopAvailable = def?.loopExpected ?? !['mesh', 'azshear', 'cc', 'zdr', 'kdp'].includes(productKey);
+  const notes: string[] = [];
+  if (def?.sourceNote) notes.push(def.sourceNote);
+  if (!loopAvailable) notes.push('Historical time-stepped loop may be limited or static for this product/source path.');
 
   const now = new Date();
   const frames: { time: string; label: string; tileUrl: string; ageMinutes: number }[] = [];
@@ -109,10 +115,18 @@ export async function GET(request: Request) {
   return Response.json(
     {
       source: 'IEM & NOAA MRMS Severe Ingest',
+      attribution: PRODUCT_ATTRIBUTION_IEM,
+      fetchedAt: now.toISOString(),
       station: site.radarId,
       siteId: site.id,
+      siteName: site.name,
       product: productCode,
       productKey,
+      productLabel: def?.label ?? productKey.toUpperCase(),
+      sourceKind: def?.sourceKind ?? 'unknown',
+      substitute: def?.substitute ?? false,
+      loopAvailable,
+      notes: notes.length ? notes : undefined,
       tilt,
       scheme: 'xyz',
       frames,
