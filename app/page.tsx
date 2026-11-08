@@ -12,6 +12,7 @@ import { PlacefileManagerModal, ActivePlacefile } from '../components/PlacefileM
 import { SkewTSoundingModal } from '../components/SkewTSoundingModal';
 import { ThreatMatrixPanel } from '../components/ThreatMatrixPanel';
 import { CrossSectionModal } from '../components/CrossSectionModal';
+import { MCDModal } from '../components/MCDModal';
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 import { PLACEFILE_NATION_CATALOG } from '../lib/placefile-catalog';
 import { SoundingProfile, generateThermodynamicSounding } from '../lib/skewt-engine';
@@ -47,6 +48,11 @@ export default function MesoVortexWX() {
   // Sounding & Threat Matrix Modals
   const [activeSounding, setActiveSounding] = useState<SoundingProfile | null>(null);
   const [showThreatMatrix, setShowThreatMatrix] = useState(false);
+
+  // Mesoscale Discussion (MCD) AI State
+  const [showMCDModal, setShowMCDModal] = useState(false);
+  const [mcdText, setMcdText] = useState('');
+  const [mcdLoading, setMcdLoading] = useState(false);
 
   // Gibson Ridge .pal Curve State
   const [palCurve, setPalCurve] = useState<ParsedPalCurve | null>(null);
@@ -190,6 +196,35 @@ export default function MesoVortexWX() {
 
   const handleDeletePlacefile = (id: string) => {
     setPlacefiles((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  // Generate SPC Mesoscale Discussion via Gemini AI
+  const handleGenerateMCD = async () => {
+    setShowMCDModal(true);
+    setMcdLoading(true);
+    try {
+      const sounding = generateThermodynamicSounding(currentSite.lat, currentSite.lon);
+      const res = await fetch('/api/copilot/mcd', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          site: currentSite,
+          product,
+          tilt,
+          sounding,
+        }),
+      });
+      const data = await res.json();
+      if (data.mcd) {
+        setMcdText(data.mcd);
+      } else {
+        setMcdText('Could not generate discussion. Please verify GEMINI_API_KEY.');
+      }
+    } catch {
+      setMcdText('Network error while reaching AI Copilot.');
+    } finally {
+      setMcdLoading(false);
+    }
   };
 
   return (
@@ -409,6 +444,15 @@ export default function MesoVortexWX() {
 
       {/* 4. RIGHT-HAND FLOATING ACTION DOCK */}
       <div className="absolute right-4 top-16 z-20 flex flex-col gap-2">
+        {/* Automated AI Mesoscale Discussion (MCD) Button */}
+        <button
+          onClick={handleGenerateMCD}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-500/50 bg-amber-600/30 text-amber-300 shadow-xl backdrop-blur-xl hover:bg-amber-600/50 transition"
+          title="Generate AI SPC Mesoscale Convective Discussion (MCD)"
+        >
+          📝
+        </button>
+
         {/* GR2Analyst RHI Cross Section Slicer */}
         <button
           onClick={() => {
@@ -436,7 +480,7 @@ export default function MesoVortexWX() {
               ? 'border-cyan-400 bg-cyan-500/30 text-cyan-300 shadow-[0_0_14px_rgba(6,182,212,0.6)] animate-pulse'
               : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
           }`}
-          title="Distance Measuring Tool: Click 2 points on radar to measure"
+          title="Distance Measuring Tool"
         >
           📏
         </button>
@@ -700,17 +744,27 @@ export default function MesoVortexWX() {
         <CrossSectionModal data={crossSectionData} onClose={() => setCrossSectionData(null)} />
       )}
 
-      {/* 9. SKEW-T SOUNDING MODAL */}
+      {/* 9. MESOSCALE CONVECTIVE DISCUSSION (MCD) MODAL */}
+      {showMCDModal && (
+        <MCDModal
+          mcdText={mcdText}
+          loading={mcdLoading}
+          onClose={() => setShowMCDModal(false)}
+          onRegenerate={handleGenerateMCD}
+        />
+      )}
+
+      {/* 10. SKEW-T SOUNDING MODAL */}
       {activeSounding && (
         <SkewTSoundingModal sounding={activeSounding} onClose={() => setActiveSounding(null)} />
       )}
 
-      {/* 10. THREAT MATRIX MODAL */}
+      {/* 11. THREAT MATRIX MODAL */}
       {showThreatMatrix && (
         <ThreatMatrixPanel onClose={() => setShowThreatMatrix(false)} />
       )}
 
-      {/* 11. GIBSON RIDGE (.pal) MODAL */}
+      {/* 12. GIBSON RIDGE (.pal) MODAL */}
       {showPalModal && (
         <PalColorTableModal
           onClose={() => setShowPalModal(false)}
@@ -721,7 +775,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 12. PLACEFILE MANAGER MODAL */}
+      {/* 13. PLACEFILE MANAGER MODAL */}
       {showPlacefileModal && (
         <PlacefileManagerModal
           placefiles={placefiles}
@@ -732,7 +786,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 13. AI ASSISTANT MODAL */}
+      {/* 14. AI ASSISTANT MODAL */}
       {showAssistant && (
         <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
           <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
@@ -744,10 +798,10 @@ export default function MesoVortexWX() {
         </div>
       )}
 
-      {/* 14. QUAD SYNCHRO VIEW MODAL */}
+      {/* 15. QUAD SYNCHRO VIEW MODAL */}
       {showQuad && <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowQuad(false)} />}
 
-      {/* 15. SPOTTER REPORT MODAL */}
+      {/* 16. SPOTTER REPORT MODAL */}
       {spotterCoords && (
         <SpotterReportModal
           currentCoords={spotterCoords}
@@ -756,7 +810,7 @@ export default function MesoVortexWX() {
         />
       )}
 
-      {/* 16. EMERGENCY SIREN AUDIO ENGINE */}
+      {/* 17. EMERGENCY SIREN AUDIO ENGINE */}
       <EmergencyAlertTone />
     </div>
   );
