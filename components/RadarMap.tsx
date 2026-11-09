@@ -33,6 +33,7 @@ type RadarMapProps = {
   tilt?: string;
   mapType?: MapType;
   palette?: PaletteType;
+  radarOpacity?: number;
   palCurve?: ParsedPalCurve | null;
   activePlacefiles?: ActivePlacefile[];
   frameUrl?: string | null;
@@ -128,6 +129,7 @@ export function RadarMap({
   mode = 'Radar',
   tilt = '0.5',
   palette = 'nws',
+  radarOpacity = 0.88,
   palCurve = null,
   activePlacefiles = [],
   frameUrl = null,
@@ -244,11 +246,11 @@ export function RadarMap({
         id: COMPOSITE_LAYER_ID,
         type: 'raster',
         source: COMPOSITE_SOURCE_ID,
-        paint: { 'raster-opacity': 0.88 },
+        paint: { 'raster-opacity': radarOpacity },
         layout: { visibility: mode === 'Composite' ? 'visible' : 'none' },
       });
     }
-  }, [mode]);
+  }, [mode, radarOpacity]);
 
   // 3. GOES Satellite Imagery
   const installSatelliteFeedLayer = useCallback((map: MapLibreMap) => {
@@ -477,7 +479,6 @@ export function RadarMap({
         properties: { id: track.id, maxDbz: track.maxDbz, mesh: track.meshInches },
       });
 
-      // Cell initial core point
       pointFeatures.push({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [track.lon, track.lat] },
@@ -489,7 +490,6 @@ export function RadarMap({
         },
       });
 
-      // Forward 15m, 30m, 45m, 60m projection rings
       track.projections.forEach((p) => {
         pointFeatures.push({
           type: 'Feature',
@@ -514,7 +514,6 @@ export function RadarMap({
     } else {
       map.addSource(SCIT_SOURCE_ID, { type: 'geojson', data: geojson as any });
 
-      // Track Arrow Line
       safeAddLayer(map, {
         id: SCIT_LINE_LAYER_ID,
         type: 'line',
@@ -528,7 +527,6 @@ export function RadarMap({
         layout: { visibility: showStormTracks ? 'visible' : 'none' },
       });
 
-      // Cell Core and Projection Ring Points
       safeAddLayer(map, {
         id: SCIT_POINTS_LAYER_ID,
         type: 'circle',
@@ -543,7 +541,6 @@ export function RadarMap({
         layout: { visibility: showStormTracks ? 'visible' : 'none' },
       });
 
-      // Projection Labels (+15m, +30m, etc.)
       safeAddLayer(map, {
         id: SCIT_LABEL_LAYER_ID,
         type: 'symbol',
@@ -561,20 +558,6 @@ export function RadarMap({
           'text-halo-color': '#020617',
           'text-halo-width': 1.5,
         },
-      });
-
-      map.on('click', SCIT_POINTS_LAYER_ID, (e) => {
-        const props = e.features?.[0]?.properties;
-        if (!props) return;
-        new maplibregl.Popup({ closeButton: true, offset: 10 })
-          .setLngLat(e.lngLat)
-          .setHTML(
-            `<div style="font-family:system-ui;padding:4px 6px;max-width:230px;">
-              <b style="color:#f59e0b;font-size:12px;">SCIT Storm Cell Track</b>
-              <div style="font-size:11px;color:#0f172a;margin-top:2px;white-space:pre-wrap;">${props.hoverText || props.label}</div>
-            </div>`
-          )
-          .addTo(map);
       });
     }
   }, [showStormTracks]);
@@ -736,7 +719,7 @@ export function RadarMap({
           type: 'raster',
           source: RADAR_SOURCE_ID,
           paint: {
-            'raster-opacity': 0.88,
+            'raster-opacity': radarOpacity,
             'raster-contrast': contrast,
             'raster-saturation': saturation,
             'raster-brightness-min': brightnessMin,
@@ -753,7 +736,7 @@ export function RadarMap({
         console.warn('Radar layer notice:', err);
       }
     },
-    [palette, palCurve, product, mode]
+    [palette, palCurve, product, mode, radarOpacity]
   );
 
   // 11. On-Map Radar Tower Pills
@@ -955,12 +938,24 @@ export function RadarMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tilt, measureMode, crossSectionMode]);
 
-  // Update SCIT Tracks when site changes
+  // Update SCIT Tracks
   useEffect(() => {
     if (mapRef.current && mapReady) {
       installSCITTracksLayer(mapRef.current, site.lat, site.lon);
     }
   }, [site.lat, site.lon, mapReady, installSCITTracksLayer]);
+
+  // Update Opacity dynamically
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (map.getLayer(RADAR_LAYER_ID)) {
+      map.setPaintProperty(RADAR_LAYER_ID, 'raster-opacity', radarOpacity);
+    }
+    if (map.getLayer(COMPOSITE_LAYER_ID)) {
+      map.setPaintProperty(COMPOSITE_LAYER_ID, 'raster-opacity', radarOpacity);
+    }
+  }, [radarOpacity, mapReady]);
 
   // Mode Switcher Handler
   useEffect(() => {
@@ -1003,16 +998,6 @@ export function RadarMap({
     }
   }, [mode, mapReady, site.lon, site.lat]);
 
-  // Toggle SCIT tracks visibility
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
-    const vis = showStormTracks ? 'visible' : 'none';
-    if (map.getLayer(SCIT_LINE_LAYER_ID)) map.setLayoutProperty(SCIT_LINE_LAYER_ID, 'visibility', vis);
-    if (map.getLayer(SCIT_POINTS_LAYER_ID)) map.setLayoutProperty(SCIT_POINTS_LAYER_ID, 'visibility', vis);
-    if (map.getLayer(SCIT_LABEL_LAYER_ID)) map.setLayoutProperty(SCIT_LABEL_LAYER_ID, 'visibility', vis);
-  }, [showStormTracks, mapReady]);
-
   // Update Placefiles
   useEffect(() => {
     if (mapRef.current && mapReady) {
@@ -1028,6 +1013,17 @@ export function RadarMap({
   }, [radarSite, showRadarPills, mapReady, renderWeatherWiseRadarPills]);
 
   // Visibility Toggles
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (map.getLayer(SCIT_LINE_LAYER_ID)) {
+      const vis = showStormTracks ? 'visible' : 'none';
+      map.setLayoutProperty(SCIT_LINE_LAYER_ID, 'visibility', vis);
+      if (map.getLayer(SCIT_POINTS_LAYER_ID)) map.setLayoutProperty(SCIT_POINTS_LAYER_ID, 'visibility', vis);
+      if (map.getLayer(SCIT_LABEL_LAYER_ID)) map.setLayoutProperty(SCIT_LABEL_LAYER_ID, 'visibility', vis);
+    }
+  }, [showStormTracks, mapReady]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -1115,7 +1111,7 @@ export function RadarMap({
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
       />
 
-      {/* FLOATING GIBSON RIDGE / RADARSCOPE TELEMETRY HUD */}
+      {/* Real-time Gate Hover Telemetry HUD */}
       {telemetry && (
         <div className="pointer-events-none absolute bottom-16 left-4 z-30 flex flex-col gap-1 rounded-2xl border border-white/15 bg-slate-950/90 p-3 shadow-2xl backdrop-blur-xl font-mono text-xs animate-fade-in">
           <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-1.5">
