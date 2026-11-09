@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { RadarMap } from '../components/RadarMap';
+import { RadarMap, BasemapType } from '../components/RadarMap';
 import { WeatherWiseRadarCard } from '../components/WeatherWiseRadarCard';
 import { WeatherWiseAlertsPanel, WeatherAlertItem } from '../components/WeatherWiseAlertsPanel';
 import { RADAR_SITES } from '../lib/radar-config';
@@ -16,7 +16,8 @@ export default function MesoVortexWorkstation() {
   const [spcDay, setSpcDay] = useState<SpcDay>('Day 1');
   const [product, setProduct] = useState<RadarProduct>('ref');
   const [tilt, setTilt] = useState('0.5');
-  const [radarSite, setRadarSite] = useState('KLZK');
+  const [radarSite, setRadarSite] = useState('US'); // Starts centered on the United States
+  const [basemap, setBasemap] = useState<BasemapType>('mapbox'); // Custom Mapbox Style is DEFAULT on startup
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Alerts Panel state
@@ -24,7 +25,8 @@ export default function MesoVortexWorkstation() {
   const [liveAlerts, setLiveAlerts] = useState<WeatherAlertItem[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const currentSite = RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
+  const currentSite =
+    RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
 
   // Fetch real-time NWS Alerts
   useEffect(() => {
@@ -62,14 +64,29 @@ export default function MesoVortexWorkstation() {
 
       {/* 2. TOP WEATHERWISE NAVIGATION BAR */}
       <div className="pointer-events-none absolute top-7 left-0 right-0 z-40 flex items-center justify-between px-4">
-        {/* Amber Menu Button */}
-        <button
-          onClick={() => setMenuOpen((v) => !v)}
-          className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-xl hover:bg-amber-300 transition font-black text-lg border border-amber-300 cursor-pointer"
-          title="Menu"
-        >
-          ☰
-        </button>
+        {/* Left Action Menu */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-xl hover:bg-amber-300 transition font-black text-lg border border-amber-300 cursor-pointer"
+            title="Menu"
+          >
+            ☰
+          </button>
+
+          {/* Quick Basemap Toggle: Mapbox Style vs Satellite */}
+          <button
+            onClick={() => setBasemap((b) => (b === 'mapbox' ? 'satellite' : 'mapbox'))}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black shadow-xl border transition cursor-pointer ${
+              basemap === 'mapbox'
+                ? 'bg-slate-900 text-cyan-300 border-cyan-400/50'
+                : 'bg-slate-900 text-emerald-300 border-emerald-400/50'
+            }`}
+            title="Switch between Custom Mapbox style and Satellite"
+          >
+            <span>{basemap === 'mapbox' ? '🗺️ Custom Mapbox' : '🛰️ Satellite'}</span>
+          </button>
+        </div>
 
         {/* Center Floating White Pill With MesoVortex Logo */}
         <div className="pointer-events-auto flex flex-col items-center">
@@ -89,10 +106,6 @@ export default function MesoVortexWorkstation() {
               <span>MesoVortex</span>
               <span className="text-[10px] text-slate-400">▾</span>
             </div>
-
-            <button className="text-slate-400 hover:text-slate-600 px-1 text-xs cursor-pointer">
-              🔍
-            </button>
 
             {/* Mode Switcher Tabs */}
             <div className="flex items-center gap-1 font-bold text-xs">
@@ -141,12 +154,13 @@ export default function MesoVortexWorkstation() {
         </button>
       </div>
 
-      {/* 3. FULL MAP CANVAS */}
+      {/* 3. FULL MAP CANVAS (Centered on the United States with Custom Mapbox Default) */}
       <div className="absolute inset-0">
         <RadarMap
           product={product === 'ref_x' || product === 'max_ref' ? 'ref' : product}
           radarSite={radarSite}
           mode={tab}
+          basemap={basemap}
           tilt={tilt}
           spcDay={spcDay}
           onSelectSite={(id) => setRadarSite(id)}
@@ -155,8 +169,8 @@ export default function MesoVortexWorkstation() {
 
       {/* 4. BOTTOM-LEFT FLOATING RADAR CARD */}
       <WeatherWiseRadarCard
-        siteId={currentSite.id}
-        siteName={currentSite.name}
+        siteId={radarSite === 'US' ? 'US CONUS' : currentSite.id}
+        siteName={radarSite === 'US' ? 'United States Overview' : currentSite.name}
         product={product}
         tilt={tilt}
         isPlaying={isPlaying}
@@ -188,9 +202,33 @@ export default function MesoVortexWorkstation() {
               <button onClick={() => setMenuOpen(false)}>✕</button>
             </div>
             <div className="space-y-2 text-xs font-bold">
-              <div className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer">📡 NEXRAD Station Directory</div>
-              <div className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer">📁 Open Placefile Manager</div>
-              <div className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer">📊 Free NOAA / Open-Meteo Diagnostics</div>
+              <div
+                onClick={() => {
+                  setRadarSite('US');
+                  setMenuOpen(false);
+                }}
+                className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"
+              >
+                🗺️ Reset View to Entire United States
+              </div>
+              <div
+                onClick={() => {
+                  setBasemap('mapbox');
+                  setMenuOpen(false);
+                }}
+                className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer text-cyan-700"
+              >
+                🎨 Custom Mapbox Basemap (cmw9hk6p6001n01s1hch23fhb)
+              </div>
+              <div
+                onClick={() => {
+                  setBasemap('satellite');
+                  setMenuOpen(false);
+                }}
+                className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer text-emerald-700"
+              >
+                🛰️ High-Resolution Satellite Basemap
+              </div>
             </div>
           </div>
           <div className="flex-1" onClick={() => setMenuOpen(false)} />
