@@ -2,157 +2,144 @@
 
 import { useState } from 'react';
 
-type RadarProduct = 'ref' | 'ref_x' | 'max_ref' | 'vel' | 'cc' | 'zdr';
-
-type Props = {
-  siteId: string;
-  siteName: string;
-  product: RadarProduct;
-  tilt: string;
-  isPlaying: boolean;
-  onSelectProduct: (p: RadarProduct) => void;
-  onSelectTilt: (t: string) => void;
-  onTogglePlay: () => void;
+export type WeatherAlertItem = {
+  id: string;
+  event: string;
+  headline: string;
+  severity: string;
+  areaDesc: string;
+  population?: string;
+  state?: string;
+  wfo?: string;
+  expiresMin?: number;
 };
 
-const PRODUCTS: { key: RadarProduct; label: string; iconBg: string }[] = [
-  { key: 'ref', label: 'Reflectivity', iconBg: 'from-blue-600 via-green-500 to-red-600' },
-  { key: 'ref_x', label: 'Reflectivity X', iconBg: 'from-cyan-500 via-yellow-400 to-rose-600' },
-  { key: 'max_ref', label: 'Max Reflectivity', iconBg: 'from-amber-400 via-red-600 to-purple-700' },
-  { key: 'vel', label: 'Velocity', iconBg: 'from-emerald-500 via-slate-800 to-red-600' },
-  { key: 'cc', label: 'Correlation Coefficient', iconBg: 'from-rose-500 via-purple-600 to-blue-500' },
-  { key: 'zdr', label: 'Differential Reflectivity', iconBg: 'from-purple-500 via-amber-400 to-cyan-400' },
-];
+type Props = {
+  alerts: WeatherAlertItem[];
+  onClose: () => void;
+  onSelectAlert: (alert: WeatherAlertItem) => void;
+};
 
-const TILTS = ['0.5', '0.9', '1.3', '1.8', '2.4', '3.1'];
+export function WeatherWiseAlertsPanel({ alerts, onClose, onSelectAlert }: Props) {
+  const [filter, setFilter] = useState<'All' | 'Warnings' | 'Watches'>('All');
 
-export function WeatherWiseRadarCard({
-  siteId,
-  product,
-  tilt,
-  isPlaying,
-  onSelectProduct,
-  onSelectTilt,
-  onTogglePlay,
-}: Props) {
-  const [expanded, setExpanded] = useState(true);
-  const [tiltMenuOpen, setTiltMenuOpen] = useState(false);
-
-  const activeProdInfo = PRODUCTS.find((p) => p.key === product) || PRODUCTS[0];
+  const warnings = alerts.filter((a) => a.event.includes('Warning'));
+  const count = alerts.length;
 
   return (
-    <div className="absolute bottom-5 left-5 z-30 w-[340px] rounded-2xl bg-white/95 text-slate-800 shadow-2xl backdrop-blur-md border border-slate-200/80 font-sans select-none overflow-hidden transition-all">
-      {/* Top Header Row */}
-      <div className="flex items-center justify-between p-3 border-b border-slate-100">
-        <div className="flex flex-col">
-          <div className="flex items-center gap-1.5 font-extrabold text-sm text-slate-900">
-            <span>{siteId}</span>
-            <span className="text-slate-400">·</span>
-            <span>{activeProdInfo.label}</span>
-          </div>
-          <div className="flex items-center gap-1 text-[11px] text-slate-500 font-medium">
-            <span>Scan At: 21:18:32</span>
-            <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse ml-1" />
-            <span className="text-emerald-600 font-bold">Live</span>
-          </div>
+    <div className="absolute right-0 top-0 bottom-0 z-40 w-[360px] bg-white text-slate-800 shadow-2xl border-l border-slate-200 flex flex-col font-sans select-none animate-slide-left">
+      {/* Top Header */}
+      <div className="flex items-center justify-between p-4 border-b border-slate-100">
+        <div className="flex items-center gap-2">
+          <span className="font-extrabold text-base text-slate-900">Current Alerts</span>
+          <span className="rounded-full bg-slate-950 px-2.5 py-0.5 text-xs font-black text-white">
+            {count}
+          </span>
         </div>
-
-        {/* Action Icon Buttons */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
-            title="Expand / Collapse"
-          >
-            {expanded ? '▾' : '▴'}
-          </button>
-          <button
-            onClick={() => setTiltMenuOpen((v) => !v)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
-            title="Elevation Tilts"
-          >
-            🔲
-          </button>
-          <button
-            onClick={onTogglePlay}
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition font-bold"
-            title={isPlaying ? 'Pause' : 'Play'}
-          >
-            {isPlaying ? '❚❚' : '▶'}
-          </button>
-        </div>
+        <button
+          onClick={onClose}
+          className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+        >
+          ✕
+        </button>
       </div>
 
-      {/* Expanded Controls Body */}
-      {expanded && (
-        <div className="p-3 space-y-3">
-          {/* Metadata Row */}
-          <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
-            <div>
-              <div>Scan At: 04/08/2026 21:18:32 ⓘ</div>
-              <div>VCP: 215 (Precipitation Mode) ⓘ</div>
-            </div>
-
-            {/* Tilt Pill Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setTiltMenuOpen((v) => !v)}
-                className="flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 px-3 py-1 font-bold text-slate-700 border border-slate-300 transition"
-              >
-                <span>{tilt}°</span>
-                <span className="text-[10px]">▾</span>
-              </button>
-
-              {tiltMenuOpen && (
-                <div className="absolute right-0 bottom-full mb-1 w-24 rounded-xl bg-white shadow-xl border border-slate-200 p-1 space-y-1 z-40">
-                  {TILTS.map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => {
-                        onSelectTilt(t);
-                        setTiltMenuOpen(false);
-                      }}
-                      className={`w-full rounded-lg py-1 text-center text-xs font-bold transition ${
-                        tilt === t ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      {t}°
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Product Thumbnail Grid */}
-          <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100">
-            {PRODUCTS.map((p) => {
-              const active = product === p.key;
-              return (
-                <div
-                  key={p.key}
-                  onClick={() => onSelectProduct(p.key)}
-                  className={`flex flex-col items-center p-1.5 rounded-xl cursor-pointer transition border text-center ${
-                    active
-                      ? 'border-blue-600 bg-blue-50/70 shadow-sm'
-                      : 'border-transparent hover:bg-slate-100'
-                  }`}
-                >
-                  {/* Thumbnail Image Box */}
-                  <div
-                    className={`h-11 w-11 rounded-xl bg-gradient-to-br ${p.iconBg} shadow-inner border border-white/60 mb-1 flex items-center justify-center text-[10px] font-bold text-white drop-shadow`}
-                  >
-                    {p.key.toUpperCase()}
-                  </div>
-                  <span className={`text-[10px] font-semibold leading-tight line-clamp-2 ${active ? 'text-blue-700' : 'text-slate-600'}`}>
-                    {p.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+      {/* Filter Buttons */}
+      <div className="p-3 border-b border-slate-100 space-y-2">
+        <div className="flex items-center gap-1.5 text-xs font-bold">
+          <button
+            onClick={() => setFilter('All')}
+            className={`rounded-full px-3 py-1 transition ${
+              filter === 'All' ? 'bg-amber-400 text-slate-950' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setFilter('Warnings')}
+            className={`rounded-full px-3 py-1 transition ${
+              filter === 'Warnings' ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Warnings
+          </button>
+          <button
+            onClick={() => setFilter('Watches')}
+            className={`rounded-full px-3 py-1 transition ${
+              filter === 'Watches' ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Watches
+          </button>
+          <button className="rounded-full bg-slate-100 px-2 py-1 text-slate-600 hover:bg-slate-200">
+            ➕
+          </button>
         </div>
-      )}
+
+        <button className="w-full rounded-xl bg-slate-950 py-1.5 text-center text-xs font-bold text-amber-300 hover:bg-slate-900 transition flex items-center justify-center gap-1.5">
+          <span>⚙</span> Settings
+        </button>
+      </div>
+
+      {/* Alerts Feed */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {/* Category Header */}
+        <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1">
+          <div className="flex items-center gap-1.5">
+            <span>Warnings</span>
+            <span className="rounded-full bg-slate-950 px-2 py-0.2 text-[10px] text-white font-mono">
+              {warnings.length}
+            </span>
+          </div>
+          <span className="text-slate-400 text-[11px] cursor-pointer">👁</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 px-1">
+          <span>🌩️ Severe Thunderstorm</span>
+          <span className="rounded-full bg-slate-950 px-1.5 text-[10px] text-white">
+            {warnings.length}
+          </span>
+          <span className="text-slate-400 text-[11px] ml-auto">ⓘ</span>
+        </div>
+
+        {/* Warning Cards (Pink/Red Background) */}
+        {warnings.map((a, i) => (
+          <div
+            key={a.id || i}
+            onClick={() => onSelectAlert(a)}
+            className="rounded-2xl border border-red-200 bg-red-50/80 hover:bg-red-100/90 p-3.5 space-y-2 cursor-pointer transition shadow-sm"
+          >
+            <div className="text-xs font-bold text-red-950 leading-snug">
+              {a.headline || '60 mph wind gusts and quarter size hail.'}
+            </div>
+
+            {/* Threat Badges Row */}
+            <div className="flex items-center gap-1.5 text-[10px] font-black text-white font-mono">
+              <span className="rounded-md bg-slate-950 px-2 py-0.5">
+                👥 {a.population || '5.8K'}
+              </span>
+              <span className="rounded-md bg-slate-950 px-2 py-0.5">
+                {a.state || 'AR'}
+              </span>
+              <span className="rounded-md bg-slate-950 px-2 py-0.5">
+                {a.wfo || 'KLZK'}
+              </span>
+            </div>
+
+            <div className="text-[10px] text-slate-500 font-medium">
+              Expires in {a.expiresMin || 27} minutes
+            </div>
+          </div>
+        ))}
+
+        {warnings.length === 0 && (
+          <div className="p-8 text-center text-xs text-slate-400">
+            No active severe warnings currently reported.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
+export default WeatherWiseAlertsPanel;
