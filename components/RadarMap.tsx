@@ -14,6 +14,12 @@ type RadarMapProps = {
   radarSite?: string;
   mode?: ModeTab;
   tilt?: string;
+  mapType?: string;
+  fastScan?: boolean;
+  showRadarPills?: boolean;
+  showWatches?: boolean;
+  showLSR?: boolean;
+  showLightning?: boolean;
   onSelectSite?: (siteId: string) => void;
 };
 
@@ -60,6 +66,12 @@ export function RadarMap({
   radarSite = 'KLZK',
   mode = 'Radar',
   tilt = '0.5',
+  mapType = 'satellite',
+  fastScan = true,
+  showRadarPills = true,
+  showWatches = true,
+  showLSR = true,
+  showLightning = true,
   onSelectSite,
 }: RadarMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -75,7 +87,6 @@ export function RadarMap({
     fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert')
       .then((res) => res.json())
       .then((geojson) => {
-        // Filter to actual polygon warnings
         const polygonFeatures = (geojson.features || []).filter((f: any) => {
           const event = f.properties?.event || '';
           return (
@@ -233,7 +244,7 @@ export function RadarMap({
       .catch((err) => console.warn('SPC load error:', err));
   }, [mode]);
 
-  // 3. Live High-Definition Radar Layer (Single-Site & Composite)
+  // 3. Live High-Definition Radar Layer
   const installRadarLayer = useCallback(
     (map: MapLibreMap) => {
       let tileUrl = '';
@@ -243,12 +254,10 @@ export function RadarMap({
       } else if (mode === 'Satellite') {
         tileUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-east-vis-1km-900913/{z}/{x}/{y}.png';
       } else {
-        // High-Resolution Single-Site NEXRAD Tilt Mapping
         let productCode = 'N0B';
         if (product === 'vel') {
           productCode = tilt === '0.9' ? 'N1U' : tilt === '1.3' ? 'N2U' : 'N0U';
         } else if (product === 'cc') {
-          // Live MRMS Precipitaiton / Dual-Pol Correlation Coefficient
           productCode = 'N0C';
         } else if (product === 'zdr') {
           productCode = 'N0X';
@@ -269,7 +278,6 @@ export function RadarMap({
         scheme: 'xyz',
       });
 
-      // Insert radar beneath warnings so warning borders always stay on top
       const beforeId = map.getLayer(WARNINGS_FILL_ID) ? WARNINGS_FILL_ID : undefined;
 
       map.addLayer(
@@ -343,7 +351,6 @@ export function RadarMap({
       renderTowerPills(map);
     });
 
-    // Auto-refresh warnings every 60 seconds
     const interval = setInterval(() => {
       if (mapRef.current) installWarningsLayer(mapRef.current);
     }, 60000);
