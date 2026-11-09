@@ -5,25 +5,16 @@ import * as maplibregl from 'maplibre-gl';
 import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { RADAR_SITES } from '../lib/radar-config';
-import { WorkstationMode, PaletteType } from '../lib/adapters/types';
 
 export type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
 
-export interface RadarMapProps {
+interface RadarMapProps {
   product?: string;
   radarSite?: string;
-  mode?: ModeTab | WorkstationMode;
+  mode?: ModeTab;
   tilt?: string;
-  palette?: PaletteType;
-  radarOpacity?: number;
   spcDay?: 'Day 1' | 'Day 2' | 'Day 3';
-  showWarnings?: boolean;
-  showWatches?: boolean;
-  showLightning?: boolean;
-  showLSR?: boolean;
-  showRadarPills?: boolean;
   onSelectSite?: (siteId: string) => void;
-  onHoverTelemetry?: (data: { az: number; distNm: number; altFt: number; val: number }) => void;
 }
 
 const RADAR_SOURCE_ID = 'mv-radar-source';
@@ -36,55 +27,29 @@ const SPC_SOURCE_ID = 'mv-spc-source';
 const SPC_FILL_ID = 'mv-spc-fill';
 const SPC_LINE_ID = 'mv-spc-line';
 
-function resolveWorkstationStyle(mode: ModeTab | WorkstationMode): string | StyleSpecification {
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  const mapboxStyle = process.env.NEXT_PUBLIC_MAPBOX_STYLE || 'centralarkgospelmeeting-star/cmw5diwpt01zo01qs5ftc22ma';
-  const maptilerKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
-
-  if (mode === 'Satellite') {
-    if (maptilerKey) {
-      return `https://api.maptiler.com/maps/hybrid-v4/style.json?key=${maptilerKey}`;
-    }
-    return {
-      version: 8,
-      sources: {
-        esriSat: {
-          type: 'raster',
-          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-          tileSize: 256,
-          attribution: '© Esri, NASA, USGS',
-        },
-      },
-      layers: [{ id: 'esri-sat', type: 'raster', source: 'esriSat' }],
-    };
-  }
-
-  if (mapboxToken && mapboxToken.startsWith('pk.')) {
-    return {
-      version: 8,
-      sources: {
-        mapboxCustom: {
-          type: 'raster',
-          tiles: [`https://api.mapbox.com/styles/v1/${mapboxStyle}/tiles/512/{z}/{x}/{y}@2x?access_token=${mapboxToken}`],
-          tileSize: 512,
-          attribution: '© Mapbox, © OpenStreetMap',
-        },
-      },
-      layers: [{ id: 'mapbox-custom-layer', type: 'raster', source: 'mapboxCustom' }],
-    };
-  }
+function createStyle(mode: ModeTab): StyleSpecification {
+  const isSatellite = mode === 'Satellite';
+  const tileUrl = isSatellite
+    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+    : 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 
   return {
     version: 8,
     sources: {
-      cartoDark: {
+      baseTiles: {
         type: 'raster',
-        tiles: ['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
+        tiles: [tileUrl],
         tileSize: 256,
-        attribution: '© CARTO, © OpenStreetMap',
+        attribution: isSatellite ? '© Esri, NASA, USGS' : '© CARTO, © OpenStreetMap',
       },
     },
-    layers: [{ id: 'carto-dark-layer', type: 'raster', source: 'cartoDark' }],
+    layers: [
+      {
+        id: 'base-tiles-layer',
+        type: 'raster',
+        source: 'baseTiles',
+      },
+    ],
   };
 }
 
@@ -93,33 +58,45 @@ export function RadarMap({
   radarSite = 'KLZK',
   mode = 'Radar',
   tilt = '0.5',
-  palette = 'radarscope',
-  radarOpacity = 0.88,
   spcDay = 'Day 1',
-  showWarnings = true,
-  showWatches = true,
-  showLightning = true,
-  showLSR = true,
-  showRadarPills = true,
   onSelectSite,
-  onHoverTelemetry,
 }: RadarMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
-  const site = RADAR_SITES.find((s) => s.id === radarSite || s.radarId === radarSite) || RADAR_SITES[0];
+  const site =
+    RADAR_SITES.find((s) => s.id === radarSite || s.radarId === radarSite) ||
+    RADAR_SITES[0];
 
+  // 1. Live NWS Warning Polygons (WeatherWise Dual-Stroke Style)
   const updateWarnings = useCallback((map: MapLibreMap) => {
-    fetch('/api/warnings')
+    fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert')
       .then((res) => res.json())
       .then((geojson) => {
+        const polygonFeatures = (geojson.features || []).filter((f: any) => {
+          const event = f.properties?.event || '';
+          return (
+            f.geometry &&
+            (event.includes('Warning') || event.includes('Tornado') || event.includes('Thunderstorm'))
+          );
+        });
+
+        const validGeoJSON = {
+          type: 'FeatureCollection',
+          features: polygonFeatures,
+        };
+
         const source = map.getSource(WARNINGS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
         if (source) {
-          source.setData(geojson);
+          source.setData(validGeoJSON as any);
         } else {
-          map.addSource(WARNINGS_SOURCE_ID, { type: 'geojson', data: geojson });
+          map.addSource(WARNINGS_SOURCE_ID, {
+            type: 'geojson',
+            data: validGeoJSON as any,
+          });
 
+          // Translucent fill
           map.addLayer({
             id: WARNINGS_FILL_ID,
             type: 'fill',
@@ -133,10 +110,11 @@ export function RadarMap({
                 'Flash Flood Warning', '#10b981',
                 '#3b82f6',
               ],
-              'fill-opacity': 0.2,
+              'fill-opacity': 0.18,
             },
           });
 
+          // Outer White Stroke
           map.addLayer({
             id: WARNINGS_LINE_OUTER_ID,
             type: 'line',
@@ -154,6 +132,7 @@ export function RadarMap({
             },
           });
 
+          // Inner Vivid Stroke
           map.addLayer({
             id: WARNINGS_LINE_INNER_ID,
             type: 'line',
@@ -170,15 +149,38 @@ export function RadarMap({
               'line-width': 1.8,
             },
           });
+
+          map.on('click', WARNINGS_FILL_ID, (e) => {
+            const props = e.features?.[0]?.properties;
+            if (!props) return;
+
+            const isTor = props.event === 'Tornado Warning';
+            new maplibregl.Popup({ closeButton: true, offset: 12 })
+              .setLngLat(e.lngLat)
+              .setHTML(
+                `<div style="font-family:system-ui;padding:6px;max-width:260px;color:#0f172a;">
+                  <span style="background:${isTor ? '#dc2626' : '#d97706'};color:#fff;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:900;text-transform:uppercase;">
+                    ${props.event}
+                  </span>
+                  <div style="font-size:12px;font-weight:800;margin-top:6px;line-height:1.3;">
+                    ${props.headline || props.description || 'Active Warning'}
+                  </div>
+                  <div style="font-size:10px;color:#64748b;margin-top:4px;">
+                    ${props.areaDesc || ''}
+                  </div>
+                </div>`
+              )
+              .addTo(map);
+          });
         }
       })
       .catch((err) => console.warn('[Warnings Notice]:', err));
   }, []);
 
+  // 2. SPC Convective Outlooks
   const updateSpcOutlooks = useCallback(
     (map: MapLibreMap) => {
-      const dayNum = spcDay.replace('Day ', '');
-      fetch(`/api/spc/outlooks?day=${dayNum}`)
+      fetch('https://www.spc.noaa.gov/products/outlook/day1otlk_cat.lyr.geojson')
         .then((res) => res.json())
         .then((data) => {
           const source = map.getSource(SPC_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
@@ -230,44 +232,62 @@ export function RadarMap({
         })
         .catch((err) => console.warn('[SPC Notice]:', err));
     },
-    [mode, spcDay]
+    [mode]
   );
 
-  const updateRadar = useCallback((map: MapLibreMap) => {
-    fetch(`/api/nexrad/frames?site=${encodeURIComponent(site.radarId)}&product=${encodeURIComponent(product)}&tilt=${encodeURIComponent(tilt)}`)
-      .then((res) => res.json())
-      .then((feed) => {
-        const tileUrl = feed.latestTileUrl;
-        if (!tileUrl) return;
+  // 3. High-Definition Radar Layer
+  const updateRadar = useCallback(
+    (map: MapLibreMap) => {
+      let tileUrl = '';
 
-        if (map.getLayer(RADAR_LAYER_ID)) map.removeLayer(RADAR_LAYER_ID);
-        if (map.getSource(RADAR_SOURCE_ID)) map.removeSource(RADAR_SOURCE_ID);
+      if (mode === 'Composite') {
+        tileUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
+      } else if (mode === 'Satellite') {
+        tileUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-east-vis-1km-900913/{z}/{x}/{y}.png';
+      } else {
+        let productCode = 'N0B';
+        if (product === 'vel') {
+          productCode = tilt === '0.9' ? 'N1U' : tilt === '1.3' ? 'N2U' : 'N0U';
+        } else if (product === 'cc') {
+          productCode = 'N0C';
+        } else if (product === 'zdr') {
+          productCode = 'N0X';
+        } else {
+          productCode = tilt === '0.9' ? 'N1B' : tilt === '1.3' ? 'N2B' : 'N0B';
+        }
 
-        map.addSource(RADAR_SOURCE_ID, {
+        tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
+      }
+
+      if (map.getLayer(RADAR_LAYER_ID)) map.removeLayer(RADAR_LAYER_ID);
+      if (map.getSource(RADAR_SOURCE_ID)) map.removeSource(RADAR_SOURCE_ID);
+
+      map.addSource(RADAR_SOURCE_ID, {
+        type: 'raster',
+        tiles: [tileUrl],
+        tileSize: 256,
+        scheme: 'xyz',
+      });
+
+      const beforeId = map.getLayer(WARNINGS_FILL_ID) ? WARNINGS_FILL_ID : undefined;
+
+      map.addLayer(
+        {
+          id: RADAR_LAYER_ID,
           type: 'raster',
-          tiles: [tileUrl],
-          tileSize: 256,
-          scheme: 'xyz',
-        });
-
-        const beforeId = map.getLayer(WARNINGS_FILL_ID) ? WARNINGS_FILL_ID : undefined;
-
-        map.addLayer(
-          {
-            id: RADAR_LAYER_ID,
-            type: 'raster',
-            source: RADAR_SOURCE_ID,
-            paint: {
-              'raster-opacity': radarOpacity,
-              'raster-fade-duration': 0,
-            },
+          source: RADAR_SOURCE_ID,
+          paint: {
+            'raster-opacity': mode === 'Satellite' ? 0.75 : 0.88,
+            'raster-fade-duration': 0,
           },
-          beforeId
-        );
-      })
-      .catch((err) => console.warn('[Radar Ingest Notice]:', err));
-  }, [site.radarId, product, tilt, radarOpacity]);
+        },
+        beforeId
+      );
+    },
+    [mode, product, tilt, site.radarId]
+  );
 
+  // Initialize Map
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -278,13 +298,18 @@ export function RadarMap({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: resolveWorkstationStyle(mode),
+      style: createStyle(mode),
       center: [site.lon, site.lat],
       zoom: 7.5,
       attributionControl: { compact: true },
     });
 
     mapRef.current = map;
+
+    // Trigger immediate resize intervals
+    setTimeout(() => map.resize(), 100);
+    setTimeout(() => map.resize(), 300);
+    setTimeout(() => map.resize(), 600);
 
     map.on('load', () => {
       setMapReady(true);
@@ -294,6 +319,7 @@ export function RadarMap({
       updateSpcOutlooks(map);
       updateRadar(map);
 
+      // On-map station pills
       RADAR_SITES.forEach((s) => {
         const isActive = s.id === radarSite || s.radarId === radarSite;
         const pill = document.createElement('div');
@@ -310,23 +336,6 @@ export function RadarMap({
       });
     });
 
-    map.on('mousemove', (e) => {
-      if (!onHoverTelemetry) return;
-      const dLat = ((e.lngLat.lat - site.lat) * Math.PI) / 180;
-      const dLon = ((e.lngLat.lng - site.lon) * Math.PI) / 180;
-      const dKm = 6371 * 2 * Math.asin(Math.sqrt(Math.sin(dLat / 2) ** 2 + Math.cos(site.lat * Math.PI / 180) * Math.cos(e.lngLat.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2));
-      const distNm = Math.round(dKm * 0.539957 * 10) / 10;
-      const az = Math.round((Math.atan2(Math.sin(dLon) * Math.cos(e.lngLat.lat * Math.PI / 180), Math.cos(site.lat * Math.PI / 180) * Math.sin(e.lngLat.lat * Math.PI / 180) - Math.sin(site.lat * Math.PI / 180) * Math.cos(e.lngLat.lat * Math.PI / 180) * Math.cos(dLon)) * 180 / Math.PI + 360) % 360);
-      const altFt = Math.round((Math.sqrt(dKm ** 2 + 8494.67 ** 2 + 2 * dKm * 8494.67 * Math.sin(parseFloat(tilt) * Math.PI / 180)) - 8494.67) * 3280.84);
-      
-      onHoverTelemetry({
-        az,
-        distNm,
-        altFt,
-        val: Math.max(5, Math.min(75, Math.round(72 - distNm * 0.4))),
-      });
-    });
-
     return () => {
       map.remove();
       mapRef.current = null;
@@ -339,7 +348,7 @@ export function RadarMap({
       updateRadar(mapRef.current);
       updateSpcOutlooks(mapRef.current);
     }
-  }, [product, tilt, spcDay, radarOpacity, mapReady, updateRadar, updateSpcOutlooks]);
+  }, [product, tilt, spcDay, mapReady, updateRadar, updateSpcOutlooks]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -352,8 +361,11 @@ export function RadarMap({
   }, [site.lon, site.lat, mode, mapReady]);
 
   return (
-    <div style={{ position: 'absolute', inset: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      <div ref={containerRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}>
+      <div
+        ref={containerRef}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
+      />
     </div>
   );
 }
