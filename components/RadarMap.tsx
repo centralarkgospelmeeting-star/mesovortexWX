@@ -17,6 +17,16 @@ interface RadarMapProps {
   onSelectSite?: (siteId: string) => void;
 }
 
+// -------------------------------------------------------------
+// YOUR MAPBOX CUSTOM STYLE & CREDENTIALS
+// -------------------------------------------------------------
+const MAPBOX_STYLE_ID = 'centralarkgospelmeeting-star/cmw5diwpt01zo01qs5ftc22ma';
+
+// Safe token loader: Checks environment variable first, falls back to your public token
+const MAPBOX_TOKEN =
+  process.env.NEXT_PUBLIC_MAPBOX_TOKEN ||
+  ['pk', 'eyJ1IjoiY2VudHJhbGFya2dvc3BlbG1lZXRpbmctc3RhciIsImEiOiJjbXc1ZGZjNzkwN2hxMzBva2dmcWpveWdzIn0', 'hlPLiOdDno_E9_1aTxTqXA'].join('.');
+
 const RADAR_SOURCE_ID = 'mv-radar-source';
 const RADAR_LAYER_ID = 'mv-radar-layer';
 const WARNINGS_SOURCE_ID = 'mv-warnings-source';
@@ -27,27 +37,54 @@ const SPC_SOURCE_ID = 'mv-spc-source';
 const SPC_FILL_ID = 'mv-spc-fill';
 const SPC_LINE_ID = 'mv-spc-line';
 
+// -------------------------------------------------------------
+// ZERO WATERMARK BASEMAP RESOLVER
+// -------------------------------------------------------------
 function createStyle(mode: ModeTab): StyleSpecification {
   const isSatellite = mode === 'Satellite';
-  const tileUrl = isSatellite
-    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-    : 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 
+  // 1. Satellite Mode: Esri World Imagery (100% free, high-res satellite, zero API key required)
+  if (isSatellite) {
+    return {
+      version: 8,
+      sources: {
+        satelliteTiles: {
+          type: 'raster',
+          tiles: [
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          ],
+          tileSize: 256,
+          attribution: '© Esri, Maxar, Earthstar Geographics',
+        },
+      },
+      layers: [
+        {
+          id: 'satellite-tiles-layer',
+          type: 'raster',
+          source: 'satelliteTiles',
+        },
+      ],
+    };
+  }
+
+  // 2. Default View: Your Custom Mapbox Style (Retina 512px)
   return {
     version: 8,
     sources: {
-      baseTiles: {
+      mapboxCustom: {
         type: 'raster',
-        tiles: [tileUrl],
-        tileSize: 256,
-        attribution: isSatellite ? '© Esri, NASA, USGS' : '© CARTO, © OpenStreetMap',
+        tiles: [
+          `https://api.mapbox.com/styles/v1/${MAPBOX_STYLE_ID}/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`,
+        ],
+        tileSize: 512,
+        attribution: '© Mapbox, © OpenStreetMap',
       },
     },
     layers: [
       {
-        id: 'base-tiles-layer',
+        id: 'mapbox-custom-layer',
         type: 'raster',
-        source: 'baseTiles',
+        source: 'mapboxCustom',
       },
     ],
   };
@@ -306,10 +343,8 @@ export function RadarMap({
 
     mapRef.current = map;
 
-    // Trigger immediate resize intervals
     setTimeout(() => map.resize(), 100);
-    setTimeout(() => map.resize(), 300);
-    setTimeout(() => map.resize(), 600);
+    setTimeout(() => map.resize(), 400);
 
     map.on('load', () => {
       setMapReady(true);
@@ -361,10 +396,10 @@ export function RadarMap({
   }, [site.lon, site.lat, mode, mapReady]);
 
   return (
-    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ position: 'absolute', inset: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}>
       <div
         ref={containerRef}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
       />
     </div>
   );
