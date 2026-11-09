@@ -26,12 +26,12 @@ export interface RadarFeedResponse {
   latestTileUrl: string;
 }
 
-// 2. Severe Alert Contract (NWS / SPC)
-export interface ActiveAlert {
+// 2. Severe Alert & Warning Contract (Exports both WeatherWarning and ActiveAlert)
+export interface WeatherWarning {
   id: string;
   event: string;
   headline: string;
-  severity: 'Extreme' | 'Severe' | 'Moderate' | 'Minor' | 'Unknown';
+  severity: 'Extreme' | 'Severe' | 'Moderate' | 'Minor' | 'Unknown' | string;
   urgency: string;
   areaDesc: string;
   sentAt: string;
@@ -40,8 +40,10 @@ export interface ActiveAlert {
   geometry: GeoJSON.Geometry | null;
 }
 
-// 3. Surface & Hyperlocal Observation Contract (NOAA / Open-Meteo / Mesonets)
-export interface SurfaceObservation {
+export type ActiveAlert = WeatherWarning;
+
+// 3. Surface Observation Contract (Exports both CurrentObservation and SurfaceObservation)
+export interface CurrentObservation {
   tempF: number;
   feelsLikeF: number;
   dewPointF: number;
@@ -54,11 +56,21 @@ export interface SurfaceObservation {
   windDirDeg: number;
   visibilityMi: number;
   conditionText: string;
-  provider: string;
+  stationId?: string;
   timestamp: string;
+  provider: 'NWS' | 'OPEN_METEO' | 'METAR' | string;
 }
 
-// 4. Storm Spotter & Crowd Observation Contract (mPING / Spotter Network)
+export type SurfaceObservation = CurrentObservation;
+
+// 4. Minutely Precipitation
+export interface MinutelyPrecipitation {
+  minute: number;
+  amountInches: number;
+  probabilityPct: number;
+}
+
+// 5. Storm Spotter & Ground Observation Contract
 export interface GroundReport {
   id: string;
   hazardType: 'Tornado' | 'Wall Cloud' | 'Hail' | 'Wind Damage' | 'Flooding';
@@ -69,4 +81,11 @@ export interface GroundReport {
   timestamp: string;
   source: 'mPING' | 'SpotterNetwork' | 'NWS_LSR' | 'Community';
   callsign?: string;
+}
+
+// 6. SPC Outlooks
+export interface SpcOutlookGeoJSON {
+  type: 'FeatureCollection';
+  features: GeoJSON.Feature[];
+  issuedAt?: string;
 }
