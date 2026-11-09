@@ -1,41 +1,35 @@
 import { NextResponse } from 'next/server';
-import { fetchJsonWithTimeout, errorPayload } from '../../../lib/api-utils';
+import { getActiveNwsWarnings } from '@/lib/adapters/noaa';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const source = 'https://api.weather.gov/alerts/active';
-  const result = await fetchJsonWithTimeout(`${source}?status=actual&message_type=alert`, {
-    headers: {
-      'User-Agent': 'MesoVortexWX/2.0 (contact@mesovortexwx.internal)',
-      Accept: 'application/geo+json',
-    },
-    timeoutMs: 12000,
-  });
-
-  if (!result.ok) {
-    return NextResponse.json(errorPayload({ type: 'FeatureCollection', features: [] }, source, result.error), {
-      headers: { 'Cache-Control': 'no-store' },
-    });
-  }
-
-  const validFeatures = (result.data.features || []).filter((f: any) => {
-    const event = f.properties?.event || '';
-    return (
-      f.geometry &&
-      (event.includes('Tornado Warning') ||
-        event.includes('Severe Thunderstorm Warning') ||
-        event.includes('Flash Flood Warning') ||
-        event.includes('Special Marine Warning'))
-    );
-  });
+  const warnings = await getActiveNwsWarnings();
 
   return NextResponse.json(
     {
       type: 'FeatureCollection',
-      features: validFeatures,
-      _meta: { fetchedAt: new Date().toISOString(), source, ok: true, count: validFeatures.length },
+      features: warnings.map((w) => ({
+        type: 'Feature',
+        id: w.id,
+        geometry: w.geometry,
+        properties: {
+          id: w.id,
+          event: w.event,
+          headline: w.headline,
+          severity: w.severity,
+          urgency: w.urgency,
+          areaDesc: w.areaDesc,
+          sentAt: w.sentAt,
+          expiresAt: w.expiresAt,
+          wfo: w.wfo,
+        },
+      })),
     },
-    { headers: { 'Cache-Control': 'public, max-age=15, stale-while-revalidate=30' } }
+    {
+      headers: {
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
+      },
+    }
   );
 }
