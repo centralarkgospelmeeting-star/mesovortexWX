@@ -9,6 +9,7 @@ import { ParsedPalCurve } from './PalColorTableModal';
 import { ActivePlacefile } from './PlacefileManagerModal';
 import { calculatePolarCoordinates, calculateBeamHeight, classifyStormGate, RadarSampling } from '../lib/radar-physics';
 import { generateThermodynamicSounding, SoundingProfile } from '../lib/skewt-engine';
+import { generateStormCellTracks, StormCellTrack } from '../lib/scit-engine';
 
 export type MapType = 'street' | 'terrain' | 'satellite' | 'globe';
 export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
@@ -39,6 +40,7 @@ type RadarMapProps = {
   fastScan?: boolean;
   measureMode?: boolean;
   crossSectionMode?: boolean;
+  showStormTracks?: boolean;
   showLightning?: boolean;
   showMetars?: boolean;
   showLSR?: boolean;
@@ -89,8 +91,10 @@ const SPC_OUTLOOK_SOURCE_ID = 'spc-outlooks';
 const SPC_OUTLOOK_FILL_ID = 'spc-outlooks-fill';
 const SPC_OUTLOOK_LINE_ID = 'spc-outlooks-line';
 
-const RHI_LINE_SOURCE_ID = 'rhi-baseline-source';
-const RHI_LINE_LAYER_ID = 'rhi-baseline-layer';
+const SCIT_SOURCE_ID = 'scit-storm-tracks-source';
+const SCIT_LINE_LAYER_ID = 'scit-storm-tracks-line';
+const SCIT_POINTS_LAYER_ID = 'scit-storm-tracks-points';
+const SCIT_LABEL_LAYER_ID = 'scit-storm-tracks-label';
 
 const SPOTTER_SOURCE_ID = 'spotter-pins';
 const SPOTTER_LAYER_ID = 'spotter-pins-circle';
@@ -131,6 +135,7 @@ export function RadarMap({
   fastScan = true,
   measureMode = false,
   crossSectionMode = false,
+  showStormTracks = true,
   showLightning = true,
   showMetars = false,
   showLSR = true,
@@ -172,7 +177,7 @@ export function RadarMap({
     }
   };
 
-  // 1. SPC Outlooks
+  // 1. SPC Convective Outlooks
   const installSPCOutlooks = useCallback((map: MapLibreMap) => {
     fetch('/api/spc/outlooks')
       .then((res) => res.json())
@@ -456,7 +461,125 @@ export function RadarMap({
       .catch((err) => console.warn('Warnings notice:', err));
   }, []);
 
-  // 8. Placefiles Renderer
+  // 8. SCIT Storm Cell Identification & Tracking Vectors
+  const installSCITTracksLayer = useCallback((map: MapLibreMap, radarLat: number, radarLon: number) => {
+    const tracks = generateStormCellTracks(radarLat, radarLon);
+    const lineFeatures: any[] = [];
+    const pointFeatures: any[] = [];
+
+    tracks.forEach((track) => {
+      const lineCoords: [number, number][] = [[track.lon, track.lat]];
+      track.projections.forEach((p) => lineCoords.push([p.lon, p.lat]));
+
+      lineFeatures.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: lineCoords },
+        properties: { id: track.id, maxDbz: track.maxDbz, mesh: track.meshInches },
+      });
+
+      // Cell initial core point
+      pointFeatures.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [track.lon, track.lat] },
+        properties: {
+          id: track.id,
+          label: `${track.id} (${track.maxDbz} dBZ)`,
+          type: 'core',
+          hoverText: `${track.id}\nMax Z: ${track.maxDbz} dBZ\nMotion: ${track.motionDeg}° @ ${track.speedKt} kt\nHail: ${track.meshInches}"`,
+        },
+      });
+
+      // Forward 15m, 30m, 45m, 60m projection rings
+      track.projections.forEach((p) => {
+        pointFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+          properties: {
+            id: `${track.id}-${p.minutesAhead}`,
+            label: p.label,
+            type: 'projection',
+            hoverText: `${track.id} Projected Arrival (${p.label})\nETA: ${p.minutesAhead} mins downwind`,
+          },
+        });
+      });
+    });
+
+    const geojson = {
+      type: 'FeatureCollection',
+      features: [...lineFeatures, ...pointFeatures],
+    };
+
+    if (map.getSource(SCIT_SOURCE_ID)) {
+      (map.getSource(SCIT_SOURCE_ID) as maplibregl.GeoJSONSource).setData(geojson as any);
+    } else {
+      map.addSource(SCIT_SOURCE_ID, { type: 'geojson', data: geojson as any });
+
+      // Track Arrow Line
+      safeAddLayer(map, {
+        id: SCIT_LINE_LAYER_ID,
+        type: 'line',
+        source: SCIT_SOURCE_ID,
+        filter: ['==', '$type', 'LineString'],
+        paint: {
+          'line-color': '#f59e0b',
+          'line-width': 2.5,
+          'line-dasharray': [3, 2],
+        },
+        layout: { visibility: showStormTracks ? 'visible' : 'none' },
+      });
+
+      // Cell Core and Projection Ring Points
+      safeAddLayer(map, {
+        id: SCIT_POINTS_LAYER_ID,
+        type: 'circle',
+        source: SCIT_SOURCE_ID,
+        filter: ['==', '$type', 'Point'],
+        paint: {
+          'circle-radius': ['case', ['==', ['get', 'type'], 'core'], 7, 4.5],
+          'circle-color': ['case', ['==', ['get', 'type'], 'core'], '#ef4444', '#f59e0b'],
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#ffffff',
+        },
+        layout: { visibility: showStormTracks ? 'visible' : 'none' },
+      });
+
+      // Projection Labels (+15m, +30m, etc.)
+      safeAddLayer(map, {
+        id: SCIT_LABEL_LAYER_ID,
+        type: 'symbol',
+        source: SCIT_SOURCE_ID,
+        filter: ['==', '$type', 'Point'],
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': 10,
+          'text-offset': [0, 1.2],
+          'text-anchor': 'top',
+          visibility: showStormTracks ? 'visible' : 'none',
+        },
+        paint: {
+          'text-color': '#fef08a',
+          'text-halo-color': '#020617',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      map.on('click', SCIT_POINTS_LAYER_ID, (e) => {
+        const props = e.features?.[0]?.properties;
+        if (!props) return;
+        new maplibregl.Popup({ closeButton: true, offset: 10 })
+          .setLngLat(e.lngLat)
+          .setHTML(
+            `<div style="font-family:system-ui;padding:4px 6px;max-width:230px;">
+              <b style="color:#f59e0b;font-size:12px;">SCIT Storm Cell Track</b>
+              <div style="font-size:11px;color:#0f172a;margin-top:2px;white-space:pre-wrap;">${props.hoverText || props.label}</div>
+            </div>`
+          )
+          .addTo(map);
+      });
+    }
+  }, [showStormTracks]);
+
+  // 9. Placefiles Renderer
   const installPlacefiles = useCallback((map: MapLibreMap, placefiles: ActivePlacefile[]) => {
     placefiles.forEach((pf) => {
       const sourceId = `pf-src-${pf.id}`;
@@ -540,7 +663,7 @@ export function RadarMap({
     });
   }, []);
 
-  // 9. Single-Site Radar Layer
+  // 10. Single-Site Radar Layer
   const installOrUpdateRadarLayer = useCallback(
     (map: MapLibreMap, tileUrl: string) => {
       if (!tileUrl) return;
@@ -633,7 +756,7 @@ export function RadarMap({
     [palette, palCurve, product, mode]
   );
 
-  // 10. On-Map Radar Tower Pills
+  // 11. On-Map Radar Tower Pills
   const renderWeatherWiseRadarPills = useCallback(
     (map: MapLibreMap) => {
       siteMarkersRef.current.forEach((m) => m.remove());
@@ -704,6 +827,7 @@ export function RadarMap({
       installOrUpdateNWSWarnings(map);
       renderWeatherWiseRadarPills(map);
       installPlacefiles(map, activePlacefiles);
+      installSCITTracksLayer(map, site.lat, site.lon);
     });
 
     map.on('mousemove', (e) => {
@@ -775,9 +899,7 @@ export function RadarMap({
       }
     });
 
-    // Click handler: Cross-Section Cut, Distance Measure, or Spotter Placement
     map.on('click', (e) => {
-      // 1. Cross-Section Tool (RHI Cut)
       if (crossSectionMode) {
         const coords: [number, number] = [e.lngLat.lng, e.lngLat.lat];
         rhiPointsRef.current.push(coords);
@@ -792,7 +914,6 @@ export function RadarMap({
         return;
       }
 
-      // 2. Distance Measure
       if (measureMode) {
         const coords: [number, number] = [e.lngLat.lng, e.lngLat.lat];
         measurePointsRef.current.push(coords);
@@ -808,7 +929,6 @@ export function RadarMap({
         return;
       }
 
-      // 3. Spotter Pin
       const coords: [number, number] = [e.lngLat.lng, e.lngLat.lat];
       if (onMapClickCoordinates) {
         onMapClickCoordinates(coords);
@@ -834,6 +954,13 @@ export function RadarMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tilt, measureMode, crossSectionMode]);
+
+  // Update SCIT Tracks when site changes
+  useEffect(() => {
+    if (mapRef.current && mapReady) {
+      installSCITTracksLayer(mapRef.current, site.lat, site.lon);
+    }
+  }, [site.lat, site.lon, mapReady, installSCITTracksLayer]);
 
   // Mode Switcher Handler
   useEffect(() => {
@@ -875,6 +1002,16 @@ export function RadarMap({
       });
     }
   }, [mode, mapReady, site.lon, site.lat]);
+
+  // Toggle SCIT tracks visibility
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const vis = showStormTracks ? 'visible' : 'none';
+    if (map.getLayer(SCIT_LINE_LAYER_ID)) map.setLayoutProperty(SCIT_LINE_LAYER_ID, 'visibility', vis);
+    if (map.getLayer(SCIT_POINTS_LAYER_ID)) map.setLayoutProperty(SCIT_POINTS_LAYER_ID, 'visibility', vis);
+    if (map.getLayer(SCIT_LABEL_LAYER_ID)) map.setLayoutProperty(SCIT_LABEL_LAYER_ID, 'visibility', vis);
+  }, [showStormTracks, mapReady]);
 
   // Update Placefiles
   useEffect(() => {
