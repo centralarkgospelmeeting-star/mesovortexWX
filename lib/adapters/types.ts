@@ -3,7 +3,45 @@ export interface GeoPoint {
   lon: number;
 }
 
-export interface CurrentObservation {
+export type WorkstationMode = 'Radar' | 'Composite' | 'Satellite' | 'Models' | 'Outlooks';
+export type DashboardPreset = 'Default' | 'Storm Chaser' | 'Emergency Manager' | 'Aviation' | 'Marine';
+export type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp' | 'mesh' | 'azshear' | 'tops' | 'vil';
+export type ElevationTilt = '0.5' | '0.9' | '1.3' | '1.8';
+export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
+
+// 1. Radar Tile Contract
+export interface RadarFrame {
+  time: string;
+  label: string;
+  tileUrl: string;
+  ageMinutes: number;
+}
+
+export interface RadarFeedResponse {
+  provider: string;
+  station: string;
+  product: string;
+  tilt: string;
+  frames: RadarFrame[];
+  latestTileUrl: string;
+}
+
+// 2. Severe Alert Contract (NWS / SPC)
+export interface ActiveAlert {
+  id: string;
+  event: string;
+  headline: string;
+  severity: 'Extreme' | 'Severe' | 'Moderate' | 'Minor' | 'Unknown';
+  urgency: string;
+  areaDesc: string;
+  sentAt: string;
+  expiresAt: string;
+  wfo: string;
+  geometry: GeoJSON.Geometry | null;
+}
+
+// 3. Surface & Hyperlocal Observation Contract (NOAA / Open-Meteo / Mesonets)
+export interface SurfaceObservation {
   tempF: number;
   feelsLikeF: number;
   dewPointF: number;
@@ -16,32 +54,19 @@ export interface CurrentObservation {
   windDirDeg: number;
   visibilityMi: number;
   conditionText: string;
-  stationId?: string;
+  provider: string;
   timestamp: string;
-  provider: 'NWS' | 'OPEN_METEO' | 'METAR';
 }
 
-export interface MinutelyPrecipitation {
-  minute: number;
-  amountInches: number;
-  probabilityPct: number;
-}
-
-export interface WeatherWarning {
+// 4. Storm Spotter & Crowd Observation Contract (mPING / Spotter Network)
+export interface GroundReport {
   id: string;
-  event: string;
-  headline: string;
-  severity: 'Extreme' | 'Severe' | 'Moderate' | 'Minor' | 'Unknown';
-  urgency: string;
-  areaDesc: string;
-  sentAt: string;
-  expiresAt: string;
-  geometry: GeoJSON.Geometry | null;
-  wfo: string;
-}
-
-export interface SpcOutlookGeoJSON {
-  type: 'FeatureCollection';
-  features: GeoJSON.Feature[];
-  issuedAt?: string;
+  hazardType: 'Tornado' | 'Wall Cloud' | 'Hail' | 'Wind Damage' | 'Flooding';
+  magnitude?: string;
+  description: string;
+  lat: number;
+  lon: number;
+  timestamp: string;
+  source: 'mPING' | 'SpotterNetwork' | 'NWS_LSR' | 'Community';
+  callsign?: string;
 }
