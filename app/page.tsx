@@ -37,6 +37,9 @@ export default function MesoVortexWX() {
   const [tilt, setTilt] = useState('0.5');
   const [palette, setPalette] = useState<PaletteType>('radarscope');
 
+  // SCIT Storm Tracks Toggle
+  const [showStormTracks, setShowStormTracks] = useState(true);
+
   // Cross-Section State
   const [crossSectionMode, setCrossSectionMode] = useState(false);
   const [crossSectionData, setCrossSectionData] = useState<CrossSectionResult | null>(null);
@@ -262,6 +265,7 @@ export default function MesoVortexWX() {
             fastScan={fastScan}
             measureMode={measureMode}
             crossSectionMode={crossSectionMode}
+            showStormTracks={showStormTracks}
             showLightning={showLightning}
             showMetars={showMetars}
             showLSR={showLSR}
@@ -293,6 +297,7 @@ export default function MesoVortexWX() {
               fastScan={fastScan}
               measureMode={measureMode}
               crossSectionMode={crossSectionMode}
+              showStormTracks={showStormTracks}
               showLightning={showLightning}
               showMetars={showMetars}
               showLSR={showLSR}
@@ -444,6 +449,19 @@ export default function MesoVortexWX() {
 
       {/* 4. RIGHT-HAND FLOATING ACTION DOCK */}
       <div className="absolute right-4 top-16 z-20 flex flex-col gap-2">
+        {/* SCIT Storm Track Vectors Toggle */}
+        <button
+          onClick={() => setShowStormTracks((v) => !v)}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
+            showStormTracks
+              ? 'border-yellow-400 bg-yellow-500/20 text-yellow-300 shadow-[0_0_12px_rgba(250,204,21,0.4)]'
+              : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
+          }`}
+          title="Toggle SCIT Storm Cell Tracking Vectors & Future Corridors"
+        >
+          ↗️
+        </button>
+
         {/* Automated AI Mesoscale Discussion (MCD) Button */}
         <button
           onClick={handleGenerateMCD}
