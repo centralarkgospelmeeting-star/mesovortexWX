@@ -1,28 +1,26 @@
 import { NextResponse } from 'next/server';
-import { getActiveNwsWarnings } from '@/lib/adapters/noaa';
+import { NwsAlertsAdapter } from '@/lib/adapters/providers';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const warnings = await getActiveNwsWarnings();
+  const alerts = await NwsAlertsAdapter.fetchActiveWarnings();
 
   return NextResponse.json(
     {
       type: 'FeatureCollection',
-      features: warnings.map((w) => ({
+      features: alerts.map((a) => ({
         type: 'Feature',
-        id: w.id,
-        geometry: w.geometry,
+        id: a.id,
+        geometry: a.geometry,
         properties: {
-          id: w.id,
-          event: w.event,
-          headline: w.headline,
-          severity: w.severity,
-          urgency: w.urgency,
-          areaDesc: w.areaDesc,
-          sentAt: w.sentAt,
-          expiresAt: w.expiresAt,
-          wfo: w.wfo,
+          id: a.id,
+          event: a.event,
+          headline: a.headline,
+          severity: a.severity,
+          urgency: a.urgency,
+          areaDesc: a.areaDesc,
+          wfo: a.wfo,
         },
       })),
     },
