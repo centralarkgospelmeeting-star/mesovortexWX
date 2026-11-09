@@ -7,25 +7,32 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { RADAR_SITES } from '../lib/radar-config';
 
 export type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
+export type BasemapType = 'mapbox' | 'satellite';
 
 interface RadarMapProps {
   product?: string;
   radarSite?: string;
   mode?: ModeTab;
+  basemap?: BasemapType;
   tilt?: string;
   spcDay?: 'Day 1' | 'Day 2' | 'Day 3';
   onSelectSite?: (siteId: string) => void;
 }
 
 // -------------------------------------------------------------
-// YOUR MAPBOX CUSTOM STYLE & CREDENTIALS
+// YOUR NEW CUSTOM MAPBOX STYLE & ACCESS TOKEN
 // -------------------------------------------------------------
-const MAPBOX_STYLE_ID = 'centralarkgospelmeeting-star/cmw5diwpt01zo01qs5ftc22ma';
+const MAPBOX_STYLE_ID =
+  process.env.NEXT_PUBLIC_MAPBOX_STYLE ||
+  'centralarkgospelmeeting-star/cmw9hk6p6001n01s1hch23fhb';
 
-// Safe token loader: Checks environment variable first, falls back to your public token
 const MAPBOX_TOKEN =
   process.env.NEXT_PUBLIC_MAPBOX_TOKEN ||
-  ['pk', 'eyJ1IjoiY2VudHJhbGFya2dvc3BlbG1lZXRpbmctc3RhciIsImEiOiJjbXc1ZGZjNzkwN2hxMzBva2dmcWpveWdzIn0', 'hlPLiOdDno_E9_1aTxTqXA'].join('.');
+  [
+    'pk',
+    'eyJ1IjoiY2VudHJhbGFya2dvc3BlbG1lZXRpbmctc3RhciIsImEiOiJjbXc1ZGZjNzkwN2hxMzBva2dmcWpveWdzIn0',
+    'hlPLiOdDno_E9_1aTxTqXA',
+  ].join('.');
 
 const RADAR_SOURCE_ID = 'mv-radar-source';
 const RADAR_LAYER_ID = 'mv-radar-layer';
@@ -38,17 +45,15 @@ const SPC_FILL_ID = 'mv-spc-fill';
 const SPC_LINE_ID = 'mv-spc-line';
 
 // -------------------------------------------------------------
-// ZERO WATERMARK BASEMAP RESOLVER
+// BASEMAP RESOLVER: CUSTOM MAPBOX DEFAULT + SATELLITE
 // -------------------------------------------------------------
-function createStyle(mode: ModeTab): StyleSpecification {
-  const isSatellite = mode === 'Satellite';
-
-  // 1. Satellite Mode: Esri World Imagery (100% free, high-res satellite, zero API key required)
-  if (isSatellite) {
+function getBasemapStyle(basemap: BasemapType): StyleSpecification {
+  // Alternative Satellite Basemap
+  if (basemap === 'satellite') {
     return {
       version: 8,
       sources: {
-        satelliteTiles: {
+        satelliteSource: {
           type: 'raster',
           tiles: [
             'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -59,32 +64,32 @@ function createStyle(mode: ModeTab): StyleSpecification {
       },
       layers: [
         {
-          id: 'satellite-tiles-layer',
+          id: 'satellite-layer',
           type: 'raster',
-          source: 'satelliteTiles',
+          source: 'satelliteSource',
         },
       ],
     };
   }
 
-  // 2. Default View: Your Custom Mapbox Style (Retina 512px)
+  // DEFAULT BASEMAP ON STARTUP: Your Custom Mapbox Style (cmw9hk6p6001n01s1hch23fhb)
   return {
     version: 8,
     sources: {
-      mapboxCustom: {
+      mapboxCustomSource: {
         type: 'raster',
         tiles: [
           `https://api.mapbox.com/styles/v1/${MAPBOX_STYLE_ID}/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`,
         ],
         tileSize: 512,
-        attribution: '© Mapbox, © OpenStreetMap',
+        attribution: '© Mapbox © OpenStreetMap',
       },
     },
     layers: [
       {
         id: 'mapbox-custom-layer',
         type: 'raster',
-        source: 'mapboxCustom',
+        source: 'mapboxCustomSource',
       },
     ],
   };
@@ -94,6 +99,7 @@ export function RadarMap({
   product = 'ref',
   radarSite = 'KLZK',
   mode = 'Radar',
+  basemap = 'mapbox',
   tilt = '0.5',
   spcDay = 'Day 1',
   onSelectSite,
@@ -133,7 +139,6 @@ export function RadarMap({
             data: validGeoJSON as any,
           });
 
-          // Translucent fill
           map.addLayer({
             id: WARNINGS_FILL_ID,
             type: 'fill',
@@ -215,62 +220,59 @@ export function RadarMap({
   }, []);
 
   // 2. SPC Convective Outlooks
-  const updateSpcOutlooks = useCallback(
-    (map: MapLibreMap) => {
-      fetch('https://www.spc.noaa.gov/products/outlook/day1otlk_cat.lyr.geojson')
-        .then((res) => res.json())
-        .then((data) => {
-          const source = map.getSource(SPC_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-          if (source) {
-            source.setData(data);
-          } else {
-            map.addSource(SPC_SOURCE_ID, { type: 'geojson', data });
+  const updateSpcOutlooks = useCallback((map: MapLibreMap) => {
+    fetch('https://www.spc.noaa.gov/products/outlook/day1otlk_cat.lyr.geojson')
+      .then((res) => res.json())
+      .then((data) => {
+        const source = map.getSource(SPC_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+        if (source) {
+          source.setData(data);
+        } else {
+          map.addSource(SPC_SOURCE_ID, { type: 'geojson', data });
 
-            map.addLayer({
-              id: SPC_FILL_ID,
-              type: 'fill',
-              source: SPC_SOURCE_ID,
-              paint: {
-                'fill-color': [
-                  'match',
-                  ['get', 'LABEL'],
-                  'TSTM', '#c1e9c1',
-                  'MRGL', '#7fc57f',
-                  'SLGT', '#f6f67d',
-                  'ENH', '#edbf69',
-                  'MDT', '#e56d6d',
-                  'HIGH', '#ff66ff',
-                  'rgba(0,0,0,0)',
-                ],
-                'fill-opacity': mode === 'Outlooks' ? 0.45 : 0.18,
-              },
-            });
+          map.addLayer({
+            id: SPC_FILL_ID,
+            type: 'fill',
+            source: SPC_SOURCE_ID,
+            paint: {
+              'fill-color': [
+                'match',
+                ['get', 'LABEL'],
+                'TSTM', '#c1e9c1',
+                'MRGL', '#7fc57f',
+                'SLGT', '#f6f67d',
+                'ENH', '#edbf69',
+                'MDT', '#e56d6d',
+                'HIGH', '#ff66ff',
+                'rgba(0,0,0,0)',
+              ],
+              'fill-opacity': 0.22,
+            },
+          });
 
-            map.addLayer({
-              id: SPC_LINE_ID,
-              type: 'line',
-              source: SPC_SOURCE_ID,
-              paint: {
-                'line-color': [
-                  'match',
-                  ['get', 'LABEL'],
-                  'TSTM', '#81c784',
-                  'MRGL', '#4caf50',
-                  'SLGT', '#fbc02d',
-                  'ENH', '#f57c00',
-                  'MDT', '#d32f2f',
-                  'HIGH', '#aa00ff',
-                  'rgba(255,255,255,0.4)',
-                ],
-                'line-width': mode === 'Outlooks' ? 2.5 : 1.5,
-              },
-            });
-          }
-        })
-        .catch((err) => console.warn('[SPC Notice]:', err));
-    },
-    [mode]
-  );
+          map.addLayer({
+            id: SPC_LINE_ID,
+            type: 'line',
+            source: SPC_SOURCE_ID,
+            paint: {
+              'line-color': [
+                'match',
+                ['get', 'LABEL'],
+                'TSTM', '#81c784',
+                'MRGL', '#4caf50',
+                'SLGT', '#fbc02d',
+                'ENH', '#f57c00',
+                'MDT', '#d32f2f',
+                'HIGH', '#aa00ff',
+                'rgba(255,255,255,0.4)',
+              ],
+              'line-width': 2,
+            },
+          });
+        }
+      })
+      .catch((err) => console.warn('[SPC Notice]:', err));
+  }, []);
 
   // 3. High-Definition Radar Layer
   const updateRadar = useCallback(
@@ -314,7 +316,7 @@ export function RadarMap({
           type: 'raster',
           source: RADAR_SOURCE_ID,
           paint: {
-            'raster-opacity': mode === 'Satellite' ? 0.75 : 0.88,
+            'raster-opacity': 0.88,
             'raster-fade-duration': 0,
           },
         },
@@ -324,7 +326,7 @@ export function RadarMap({
     [mode, product, tilt, site.radarId]
   );
 
-  // Initialize Map
+  // Initialize Map Centered on the United States
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -335,16 +337,16 @@ export function RadarMap({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: createStyle(mode),
-      center: [site.lon, site.lat],
-      zoom: 7.5,
+      style: getBasemapStyle(basemap),
+      center: [-98.5795, 39.8283], // Centered on the United States on application startup
+      zoom: 4.4,
       attributionControl: { compact: true },
     });
 
     mapRef.current = map;
 
     setTimeout(() => map.resize(), 100);
-    setTimeout(() => map.resize(), 400);
+    setTimeout(() => map.resize(), 300);
 
     map.on('load', () => {
       setMapReady(true);
@@ -376,8 +378,9 @@ export function RadarMap({
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, [basemap]);
 
+  // Update layers on product or mode changes
   useEffect(() => {
     if (mapRef.current && mapReady) {
       updateRadar(mapRef.current);
@@ -385,15 +388,15 @@ export function RadarMap({
     }
   }, [product, tilt, spcDay, mapReady, updateRadar, updateSpcOutlooks]);
 
+  // Fly to selected radar station when chosen
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    if (mode === 'Composite' || mode === 'Outlooks') {
-      map.flyTo({ center: [-98.5, 39.5], zoom: 4.5, duration: 1200 });
-    } else {
-      map.flyTo({ center: [site.lon, site.lat], zoom: 7.5, duration: 900 });
+
+    if (radarSite !== 'US') {
+      map.flyTo({ center: [site.lon, site.lat], zoom: 7.5, duration: 1100 });
     }
-  }, [site.lon, site.lat, mode, mapReady]);
+  }, [site.lon, site.lat, radarSite, mapReady]);
 
   return (
     <div style={{ position: 'absolute', inset: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}>
