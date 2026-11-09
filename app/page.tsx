@@ -13,12 +13,14 @@ import { SkewTSoundingModal } from '../components/SkewTSoundingModal';
 import { ThreatMatrixPanel } from '../components/ThreatMatrixPanel';
 import { CrossSectionModal } from '../components/CrossSectionModal';
 import { MCDModal } from '../components/MCDModal';
+import { HyperlocalDashboardModal } from '../components/HyperlocalDashboardModal';
 import { RADAR_SITES, RADAR_PRODUCTS } from '../lib/radar-config';
 import { PLACEFILE_NATION_CATALOG } from '../lib/placefile-catalog';
 import { SoundingProfile, generateThermodynamicSounding } from '../lib/skewt-engine';
 import { computeVerticalCrossSection, CrossSectionResult } from '../lib/cross-section';
 
 type RadarProduct = 'ref' | 'vel' | 'srvel' | 'cc' | 'zdr' | 'kdp' | 'tops' | 'vil' | 'mesh' | 'azshear';
+type DashboardPreset = 'Default' | 'Storm Chaser' | 'Emergency Manager' | 'Aviation' | 'Marine';
 
 type Frame = {
   time: string;
@@ -34,35 +36,43 @@ export default function MesoVortexWX() {
   const [product, setProduct] = useState<RadarProduct>('ref');
   const [radarSite, setRadarSite] = useState('KLZK');
   const [activeTab, setActiveTab] = useState<ModeTab>('Radar');
+  const [dashboardPreset, setDashboardPreset] = useState<DashboardPreset>('Default');
   const [tilt, setTilt] = useState('0.5');
   const [palette, setPalette] = useState<PaletteType>('radarscope');
+  const [radarOpacity, setRadarOpacity] = useState(0.88);
 
-  // SCIT Storm Tracks Toggle
+  // WeatherWise Pro Dedicated Dock State
+  const [leftDockOpen, setLeftDockOpen] = useState(true);
+  const [rightDockOpen, setRightDockOpen] = useState(true);
+
+  // Layer Toggles
   const [showStormTracks, setShowStormTracks] = useState(true);
+  const [showRadarPills, setShowRadarPills] = useState(true);
+  const [showLightning, setShowLightning] = useState(true);
+  const [showMetars, setShowMetars] = useState(false);
+  const [showLSR, setShowLSR] = useState(true);
+  const [showWatches, setShowWatches] = useState(true);
 
-  // Cross-Section State
+  // Cross-Section & Measurement Tools
   const [crossSectionMode, setCrossSectionMode] = useState(false);
   const [crossSectionData, setCrossSectionData] = useState<CrossSectionResult | null>(null);
-
-  // Measurement tool state
   const [measureMode, setMeasureMode] = useState(false);
   const [measuredDistance, setMeasuredDistance] = useState<{ nm: number; mi: number } | null>(null);
 
-  // Sounding & Threat Matrix Modals
+  // Modals
   const [activeSounding, setActiveSounding] = useState<SoundingProfile | null>(null);
   const [showThreatMatrix, setShowThreatMatrix] = useState(false);
-
-  // Mesoscale Discussion (MCD) AI State
+  const [showHyperlocal, setShowHyperlocal] = useState(false);
   const [showMCDModal, setShowMCDModal] = useState(false);
   const [mcdText, setMcdText] = useState('');
   const [mcdLoading, setMcdLoading] = useState(false);
-
-  // Gibson Ridge .pal Curve State
   const [palCurve, setPalCurve] = useState<ParsedPalCurve | null>(null);
   const [showPalModal, setShowPalModal] = useState(false);
-
-  // Gibson Ridge Placefiles State
   const [showPlacefileModal, setShowPlacefileModal] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
+  const [showQuad, setShowQuad] = useState(false);
+
+  // Placefiles
   const [placefiles, setPlacefiles] = useState<ActivePlacefile[]>(() =>
     PLACEFILE_NATION_CATALOG.map((item) => ({
       id: item.id,
@@ -72,20 +82,10 @@ export default function MesoVortexWX() {
     }))
   );
 
-  // FastScan Ultra-Low Latency Engine
+  // FastScan Engine
   const [fastScan, setFastScan] = useState(true);
 
-  // Layer Toggles
-  const [showRadarPills, setShowRadarPills] = useState(true);
-  const [showLightning, setShowLightning] = useState(true);
-  const [showMetars, setShowMetars] = useState(false);
-  const [showLSR, setShowLSR] = useState(true);
-  const [showWatches, setShowWatches] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [showAssistant, setShowAssistant] = useState(false);
-  const [showQuad, setShowQuad] = useState(false);
-
-  // Spotter reporting state
+  // Spotter network
   const [spotterCoords, setSpotterCoords] = useState<[number, number] | null>(null);
   const [spotterReports, setSpotterReports] = useState<SpotterPin[]>([]);
 
@@ -104,7 +104,30 @@ export default function MesoVortexWX() {
   const productInfo = RADAR_PRODUCTS.find((p) => p.key === product);
   const currentFrame = frames[frameIndex] || null;
 
-  // Load LIVE frames (Multi-Tilt + MRMS Support)
+  // Handle Preset Switching
+  const handleSelectPreset = (preset: DashboardPreset) => {
+    setDashboardPreset(preset);
+    if (preset === 'Storm Chaser') {
+      setProduct('vel');
+      setShowStormTracks(true);
+      setShowLSR(true);
+      setShowLightning(true);
+    } else if (preset === 'Emergency Manager') {
+      setShowWatches(true);
+      setShowLSR(true);
+      setShowThreatMatrix(true);
+    } else if (preset === 'Aviation') {
+      setShowMetars(true);
+      setProduct('tops');
+    } else if (preset === 'Marine') {
+      setActiveTab('Composite');
+    } else {
+      setProduct('ref');
+      setTilt('0.5');
+    }
+  };
+
+  // Load LIVE frames
   const loadFrames = useCallback(async () => {
     setLoopLoading(true);
     try {
@@ -181,27 +204,6 @@ export default function MesoVortexWX() {
     setSpotterCoords(null);
   };
 
-  const handleTogglePlacefile = (id: string) => {
-    setPlacefiles((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p))
-    );
-  };
-
-  const handleAddPlacefile = (name: string, url: string) => {
-    const newPf: ActivePlacefile = {
-      id: `pf-${Date.now()}`,
-      name,
-      url,
-      enabled: true,
-    };
-    setPlacefiles((prev) => [...prev, newPf]);
-  };
-
-  const handleDeletePlacefile = (id: string) => {
-    setPlacefiles((prev) => prev.filter((p) => p.id !== id));
-  };
-
-  // Generate SPC Mesoscale Discussion via Gemini AI
   const handleGenerateMCD = async () => {
     setShowMCDModal(true);
     setMcdLoading(true);
@@ -218,131 +220,73 @@ export default function MesoVortexWX() {
         }),
       });
       const data = await res.json();
-      if (data.mcd) {
-        setMcdText(data.mcd);
-      } else {
-        setMcdText('Could not generate discussion. Please verify GEMINI_API_KEY.');
-      }
+      if (data.mcd) setMcdText(data.mcd);
+      else setMcdText('Could not generate discussion. Check GEMINI_API_KEY.');
     } catch {
-      setMcdText('Network error while reaching AI Copilot.');
+      setMcdText('Network error reaching AI Copilot.');
     } finally {
       setMcdLoading(false);
     }
   };
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[#070c14] text-slate-100 select-none">
-      {/* Distance Measurement Display Card */}
-      {measuredDistance && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-2xl border border-cyan-500/50 bg-slate-950/95 px-4 py-2 font-mono text-xs shadow-2xl backdrop-blur-xl">
-          <span className="text-cyan-400 font-bold">📏 DISTANCE:</span>
-          <b className="text-white">{measuredDistance.nm} nm</b>
-          <span className="text-slate-500">|</span>
-          <b className="text-white">{measuredDistance.mi} miles</b>
+    <div className="relative h-screen w-screen overflow-hidden bg-[#050811] text-slate-100 select-none font-sans">
+      
+      {/* 1. TOP WEATHERWISE PRO WORKSTATION HEADER */}
+      <header className="absolute top-0 left-0 right-0 z-30 h-14 border-b border-white/10 bg-slate-950/90 px-4 flex items-center justify-between shadow-2xl backdrop-blur-2xl">
+        {/* Brand & Left Dock Toggle */}
+        <div className="flex items-center gap-3">
           <button
-            onClick={() => setMeasuredDistance(null)}
-            className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300 hover:text-white"
+            onClick={() => setLeftDockOpen((v) => !v)}
+            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
+              leftDockOpen ? 'border-cyan-500/50 bg-cyan-950/50 text-cyan-400' : 'border-white/10 bg-slate-900 text-slate-400 hover:text-white'
+            }`}
+            title="Toggle Weather Layers & Map Controls Sidebar"
           >
-            Clear
+            ☰
           </button>
-        </div>
-      )}
 
-      {/* 1. SATELLITE RADAR MAP CANVAS */}
-      <div className={`absolute inset-0 ${dualPane ? 'grid grid-cols-2' : ''}`}>
-        <div className="relative h-full w-full">
-          <RadarMap
-            product={product}
-            radarSite={radarSite}
-            mode={activeTab}
-            tilt={tilt}
-            mapType="satellite"
-            palette={palette}
-            palCurve={palCurve}
-            activePlacefiles={placefiles}
-            frameUrl={currentFrame?.tileUrl ?? null}
-            frameLabel={currentFrame?.label}
-            fastScan={fastScan}
-            measureMode={measureMode}
-            crossSectionMode={crossSectionMode}
-            showStormTracks={showStormTracks}
-            showLightning={showLightning}
-            showMetars={showMetars}
-            showLSR={showLSR}
-            showWatches={showWatches}
-            showRadarPills={showRadarPills}
-            spotterReports={spotterReports}
-            onSelectSite={(siteId) => setRadarSite(siteId)}
-            onOpenSounding={(profile) => setActiveSounding(profile)}
-            onMeasureComplete={(nm, mi) => setMeasuredDistance({ nm, mi })}
-            onCrossSectionCut={(pA, pB) => {
-              const res = computeVerticalCrossSection(pA, pB, currentSite.lat, currentSite.lon);
-              setCrossSectionData(res);
-              setCrossSectionMode(false);
-            }}
-            onMapClickCoordinates={(coords) => setSpotterCoords(coords)}
-          />
-        </div>
-        {dualPane && (
-          <div className="relative h-full w-full border-l border-white/10">
-            <RadarMap
-              product={product2}
-              radarSite={radarSite}
-              mode={activeTab}
-              tilt={tilt}
-              mapType="satellite"
-              palette={palette}
-              palCurve={palCurve}
-              activePlacefiles={placefiles}
-              fastScan={fastScan}
-              measureMode={measureMode}
-              crossSectionMode={crossSectionMode}
-              showStormTracks={showStormTracks}
-              showLightning={showLightning}
-              showMetars={showMetars}
-              showLSR={showLSR}
-              showWatches={showWatches}
-              showRadarPills={showRadarPills}
-              onSelectSite={(siteId) => setRadarSite(siteId)}
-              onOpenSounding={(profile) => setActiveSounding(profile)}
-              onMeasureComplete={(nm, mi) => setMeasuredDistance({ nm, mi })}
-              onCrossSectionCut={(pA, pB) => {
-                const res = computeVerticalCrossSection(pA, pB, currentSite.lat, currentSite.lon);
-                setCrossSectionData(res);
-                setCrossSectionMode(false);
-              }}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* 2. TOP FLOATING PILL BAR (Interactive Mode Switcher) */}
-      <header className="pointer-events-none absolute left-0 right-0 top-3 z-30 flex justify-center px-4">
-        <nav aria-label="Mode switcher" className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-950/90 p-1.5 shadow-2xl backdrop-blur-xl">
-          <div className="flex items-center gap-2 pl-2 pr-3">
-            <Image src="/logo.png" alt="MesoVortex Wx" width={26} height={26} className="rounded-full" priority />
-            <span className="hidden text-xs font-black tracking-wider uppercase sm:inline text-white">
-              MESO<span className="text-cyan-400">VORTEX</span> <span className="text-[9px] text-amber-400 font-bold ml-0.5">PRO</span>
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-cyan-600 text-white font-black text-xs shadow-md">
+              ⚡
+            </span>
+            <span className="text-sm font-black tracking-wider uppercase text-white hidden sm:inline">
+              MESO<span className="text-cyan-400">VORTEX</span> <span className="text-amber-400 text-[10px] font-bold">PRO</span>
             </span>
           </div>
 
-          <div className="h-4 w-px bg-white/15" />
+          {/* Station Selector Badge */}
+          <select
+            value={radarSite}
+            onChange={(e) => setRadarSite(e.target.value)}
+            className="rounded-xl border border-white/15 bg-slate-900 px-3 py-1.5 text-xs font-bold text-white focus:border-cyan-400 focus:outline-none cursor-pointer"
+          >
+            {RADAR_SITES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.id} · {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          {(['Radar', 'Composite', 'Satellite', 'Models', 'Outlooks'] as ModeTab[]).map((tab) => (
+        {/* Center: Workstation Mode & Dashboard Switcher */}
+        <div className="hidden lg:flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-900/80 p-1">
+          {(['Default', 'Storm Chaser', 'Emergency Manager', 'Aviation', 'Marine'] as DashboardPreset[]).map((p) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              key={p}
+              onClick={() => handleSelectPreset(p)}
               className={`rounded-full px-3 py-1 text-xs font-bold transition ${
-                activeTab === tab
-                  ? 'bg-cyan-600 text-white shadow-md'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                dashboardPreset === p ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
-              {tab}
+              {p}
             </button>
           ))}
+        </div>
 
-          {/* FastScan Live Pill */}
+        {/* Right Header Controls */}
+        <div className="flex items-center gap-2">
+          {/* FastScan Engine Indicator */}
           <button
             onClick={() => setFastScan((f) => !f)}
             className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider transition ${
@@ -350,419 +294,355 @@ export default function MesoVortexWX() {
                 ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(16,185,129,0.5)]'
                 : 'border border-white/20 bg-slate-900 text-slate-400 hover:text-white'
             }`}
-            title="FastScan Technology: Sub-minute scan updates"
+            title="FastScan: Ultra-low-latency real-time updates"
           >
             <span className={`h-2 w-2 rounded-full ${fastScan ? 'bg-slate-950 animate-ping' : 'bg-slate-500'}`} />
             <span>FastScan</span>
           </button>
-        </nav>
+
+          <button
+            onClick={() => setRightDockOpen((v) => !v)}
+            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
+              rightDockOpen ? 'border-cyan-500/50 bg-cyan-950/50 text-cyan-400' : 'border-white/10 bg-slate-900 text-slate-400 hover:text-white'
+            }`}
+            title="Toggle Weather Intelligence Sidebar"
+          >
+            📊
+          </button>
+        </div>
       </header>
 
-      {/* 3. TOP-LEFT RADAR HUD & VCP MULTI-TILT SLICER */}
-      <div className="pointer-events-none absolute left-4 top-16 z-20 flex flex-col gap-2">
-        <div className="pointer-events-auto flex items-center gap-2.5 rounded-2xl border border-white/15 bg-slate-950/90 px-3.5 py-2 shadow-2xl backdrop-blur-xl">
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black tracking-wide text-white">
-                {activeTab === 'Radar' ? currentSite.id : activeTab.toUpperCase()}
-              </span>
-              <span className="text-[11px] font-medium text-slate-300">
-                {activeTab === 'Radar' ? currentSite.name : `CONUS ${activeTab} View`}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
-              <span className="text-cyan-400 font-semibold">{productInfo?.label || product.toUpperCase()}</span>
-              <span>•</span>
-              <div className="flex items-center gap-1 bg-slate-900 rounded px-1.5 py-0.5 border border-white/10">
-                <span className="text-slate-500">Tilt:</span>
-                {VCP_TILTS.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setTilt(t)}
-                    className={`px-1 rounded text-[10px] font-bold ${
-                      tilt === t ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {t}°
-                  </button>
-                ))}
-              </div>
-              <span>•</span>
-              <span className="text-amber-400 font-semibold">{fastScan ? '⚡ FastScan' : 'VCP 212'}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Product Switcher Pills with MESH & ROTATION Tracks */}
-        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-slate-950/85 p-1 shadow-xl backdrop-blur-lg max-w-[340px]">
-          {RADAR_PRODUCTS.map((p) => {
-            const active = product === p.key;
-            return (
-              <button
-                key={p.key}
-                onClick={() => setProduct(p.key as RadarProduct)}
-                className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold transition ${
-                  active
-                    ? 'bg-cyan-500 text-slate-950 shadow-[0_0_10px_rgba(6,182,212,0.5)]'
-                    : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                {p.short}
-              </button>
-            );
-          })}
-          <button
-            onClick={() => setProduct('mesh')}
-            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
-              product === 'mesh' ? 'bg-pink-500 text-slate-950 shadow-[0_0_10px_rgba(236,72,153,0.6)]' : 'text-pink-300 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            MESH
-          </button>
-          <button
-            onClick={() => setProduct('azshear')}
-            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
-              product === 'azshear' ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.6)]' : 'text-red-300 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            ROTATION
-          </button>
-          <button
-            onClick={() => setProduct('tops')}
-            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
-              product === 'tops' ? 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'text-purple-300 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            TOPS
-          </button>
-          <button
-            onClick={() => setProduct('vil')}
-            className={`rounded-lg px-2 py-1 text-[11px] font-extrabold transition ${
-              product === 'vil' ? 'bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'text-amber-300 hover:bg-white/10 hover:text-white'
-            }`}
-          >
-            VIL
-          </button>
-        </div>
-      </div>
-
-      {/* 4. RIGHT-HAND FLOATING ACTION DOCK */}
-      <div className="absolute right-4 top-16 z-20 flex flex-col gap-2">
-        {/* SCIT Storm Track Vectors Toggle */}
-        <button
-          onClick={() => setShowStormTracks((v) => !v)}
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showStormTracks
-              ? 'border-yellow-400 bg-yellow-500/20 text-yellow-300 shadow-[0_0_12px_rgba(250,204,21,0.4)]'
-              : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
-          }`}
-          title="Toggle SCIT Storm Cell Tracking Vectors & Future Corridors"
-        >
-          ↗️
-        </button>
-
-        {/* Automated AI Mesoscale Discussion (MCD) Button */}
-        <button
-          onClick={handleGenerateMCD}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-500/50 bg-amber-600/30 text-amber-300 shadow-xl backdrop-blur-xl hover:bg-amber-600/50 transition"
-          title="Generate AI SPC Mesoscale Convective Discussion (MCD)"
-        >
-          📝
-        </button>
-
-        {/* GR2Analyst RHI Cross Section Slicer */}
-        <button
-          onClick={() => {
-            setCrossSectionMode((v) => !v);
-            setMeasureMode(false);
-          }}
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            crossSectionMode
-              ? 'border-purple-400 bg-purple-600/40 text-purple-200 shadow-[0_0_15px_rgba(168,85,247,0.7)] animate-pulse'
-              : 'border-white/10 bg-slate-950/85 text-slate-300 hover:text-white'
-          }`}
-          title="RHI Vertical Cross-Section: Click 2 points across storm to slice"
-        >
-          ✂️
-        </button>
-
-        {/* Distance Measure Tool */}
-        <button
-          onClick={() => {
-            setMeasureMode((m) => !m);
+      {/* 2. MAIN MAP CANVAS */}
+      <div className="absolute inset-0 pt-14 pb-16">
+        <RadarMap
+          product={product}
+          radarSite={radarSite}
+          mode={activeTab}
+          tilt={tilt}
+          mapType="satellite"
+          palette={palette}
+          radarOpacity={radarOpacity}
+          palCurve={palCurve}
+          activePlacefiles={placefiles}
+          frameUrl={currentFrame?.tileUrl ?? null}
+          frameLabel={currentFrame?.label}
+          fastScan={fastScan}
+          measureMode={measureMode}
+          crossSectionMode={crossSectionMode}
+          showStormTracks={showStormTracks}
+          showLightning={showLightning}
+          showMetars={showMetars}
+          showLSR={showLSR}
+          showWatches={showWatches}
+          showRadarPills={showRadarPills}
+          spotterReports={spotterReports}
+          onSelectSite={(siteId) => setRadarSite(siteId)}
+          onOpenSounding={(profile) => setActiveSounding(profile)}
+          onMeasureComplete={(nm, mi) => setMeasuredDistance({ nm, mi })}
+          onCrossSectionCut={(pA, pB) => {
+            const res = computeVerticalCrossSection(pA, pB, currentSite.lat, currentSite.lon);
+            setCrossSectionData(res);
             setCrossSectionMode(false);
           }}
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            measureMode
-              ? 'border-cyan-400 bg-cyan-500/30 text-cyan-300 shadow-[0_0_14px_rgba(6,182,212,0.6)] animate-pulse'
-              : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
-          }`}
-          title="Distance Measuring Tool"
-        >
-          📏
-        </button>
-
-        {/* Threat Matrix Button */}
-        <button
-          onClick={() => setShowThreatMatrix(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/50 bg-red-600/30 text-red-200 shadow-xl backdrop-blur-xl hover:bg-red-600/50 transition"
-          title="Severe Threat Matrix & Risk Score (0-100)"
-        >
-          📊
-        </button>
-
-        {/* Instant Sounding at Radar Site */}
-        <button
-          onClick={() => {
-            const profile = generateThermodynamicSounding(currentSite.lat, currentSite.lon);
-            setActiveSounding(profile);
-          }}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition"
-          title="Skew-T Sounding & Hodograph at Radar Site"
-        >
-          📈
-        </button>
-
-        <button
-          onClick={() => setShowPlacefileModal(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition"
-          title="PlacefileNation Suite (54 Feeds)"
-        >
-          📡
-        </button>
-
-        <button
-          onClick={() => setShowPalModal(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-600/30 text-amber-200 shadow-xl backdrop-blur-xl hover:bg-amber-600/50 transition"
-          title="Load Gibson Ridge (.pal) Color Table"
-        >
-          📁
-        </button>
-
-        <button
-          onClick={() => setShowLightning((v) => !v)}
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showLightning ? 'border-amber-400/50 bg-amber-500/20 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
-          }`}
-          title="Toggle Live Lightning (GOES GLM)"
-        >
-          ⚡
-        </button>
-        <button
-          onClick={() => setShowLSR((v) => !v)}
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showLSR ? 'border-sky-400/50 bg-sky-500/20 text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
-          }`}
-          title="Toggle NWS Storm Reports (LSR)"
-        >
-          🌪️
-        </button>
-        <button
-          onClick={() => setShowWatches((v) => !v)}
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showWatches ? 'border-rose-400/50 bg-rose-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
-          }`}
-          title="Toggle Watch Boxes"
-        >
-          🛡️
-        </button>
-        <button
-          onClick={() => setShowMetars((v) => !v)}
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showMetars ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
-          }`}
-          title="Toggle Airport METAR Stations"
-        >
-          🌡️
-        </button>
-        <button
-          onClick={() => setShowRadarPills((v) => !v)}
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            showRadarPills ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-300' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
-          }`}
-          title="Toggle On-Map Radar Tower Pills"
-        >
-          🛰️
-        </button>
-        <button
-          onClick={() => setShowQuad(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-slate-950/85 text-cyan-400 shadow-xl backdrop-blur-xl hover:bg-slate-900"
-          title="Quad Synchro View"
-        >
-          ⊞
-        </button>
-        <button
-          onClick={() => setDualPane((v) => !v)}
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${
-            dualPane ? 'border-cyan-500/50 bg-cyan-600/30 text-cyan-200' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'
-          }`}
-          title="Split Dual View"
-        >
-          ▦
-        </button>
-        <button
-          onClick={() => setSettingsOpen((v) => !v)}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-slate-950/85 text-slate-300 shadow-xl backdrop-blur-xl hover:bg-slate-900 hover:text-white"
-          title="Palettes & Settings"
-        >
-          ⚙
-        </button>
-        <button
-          onClick={() => setShowAssistant(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-500/40 bg-violet-600/20 text-violet-300 shadow-xl backdrop-blur-xl hover:bg-violet-600/30"
-          title="AI Meteorologist Copilot"
-        >
-          🤖
-        </button>
+          onMapClickCoordinates={(coords) => setSpotterCoords(coords)}
+        />
       </div>
 
-      {/* 5. FLOATING PLAYER BAR */}
-      <footer className="pointer-events-none absolute bottom-9 left-0 right-0 z-20 flex justify-center px-4">
-        <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/15 bg-slate-950/90 px-4 py-2 shadow-2xl backdrop-blur-2xl">
+      {/* 3. DEDICATED LEFT SIDEBAR (Weather Layers & Map Controls) */}
+      <aside
+        className={`absolute left-0 top-14 bottom-16 z-20 w-80 border-r border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur-2xl transition-transform duration-300 flex flex-col ${
+          leftDockOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-white/10 p-3.5 bg-slate-900/60">
+          <span className="text-xs font-black uppercase tracking-wider text-cyan-300">Weather Layers &amp; Controls</span>
+          <span className="text-[10px] text-slate-400 font-mono">VCP 212</span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+          {/* Radar Opacity Slider */}
+          <div>
+            <div className="flex justify-between text-slate-300 mb-1.5 font-bold">
+              <span>Radar Layer Opacity</span>
+              <span className="text-cyan-400 font-mono">{Math.round(radarOpacity * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min={0.2}
+              max={1.0}
+              step={0.05}
+              value={radarOpacity}
+              onChange={(e) => setRadarOpacity(parseFloat(e.target.value))}
+              className="w-full accent-cyan-400 cursor-pointer"
+            />
+          </div>
+
+          {/* NEXRAD Products */}
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2 block">
+              Radar Products (Level III &amp; MRMS)
+            </span>
+            <div className="grid grid-cols-3 gap-1.5 font-bold text-[11px]">
+              {(['ref', 'vel', 'srvel', 'cc', 'zdr', 'kdp', 'mesh', 'azshear', 'tops', 'vil'] as RadarProduct[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setProduct(p)}
+                  className={`rounded-lg py-1.5 uppercase transition ${
+                    product === p
+                      ? 'bg-cyan-500 text-slate-950 font-black shadow-[0_0_10px_rgba(6,182,212,0.5)]'
+                      : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* VCP Elevation Tilt Slices */}
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2 block">
+              Elevation Beam Tilts (VCP Slices)
+            </span>
+            <div className="grid grid-cols-4 gap-1.5 font-mono text-xs">
+              {VCP_TILTS.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTilt(t)}
+                  className={`rounded-lg py-1 transition font-bold ${
+                    tilt === t ? 'bg-cyan-500 text-slate-950' : 'bg-slate-900 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {t}°
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Overlays Checklist */}
+          <div className="space-y-2 border-t border-white/10 pt-3">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+              Workstation Overlays
+            </span>
+            {[
+              { label: '⚡ Live Lightning (GOES GLM)', checked: showLightning, toggle: () => setShowLightning((v) => !v) },
+              { label: '🌪️ NWS Storm Damage (LSR)', checked: showLSR, toggle: () => setShowLSR((v) => !v) },
+              { label: '🛡️ Active Watch Boxes', checked: showWatches, toggle: () => setShowWatches((v) => !v) },
+              { label: '↗️ SCIT Storm Motion Vectors', checked: showStormTracks, toggle: () => setShowStormTracks((v) => !v) },
+              { label: '🌡️ Airport METAR Stations', checked: showMetars, toggle: () => setShowMetars((v) => !v) },
+              { label: '📡 On-Map Radar Tower Pills', checked: showRadarPills, toggle: () => setShowRadarPills((v) => !v) },
+            ].map((item) => (
+              <label key={item.label} className="flex items-center justify-between text-slate-300 cursor-pointer">
+                <span>{item.label}</span>
+                <input
+                  type="checkbox"
+                  checked={item.checked}
+                  onChange={item.toggle}
+                  className="accent-cyan-400 h-4 w-4 rounded"
+                />
+              </label>
+            ))}
+          </div>
+
+          {/* Placefiles & Palettes Access */}
+          <div className="border-t border-white/10 pt-3 flex gap-2">
+            <button
+              onClick={() => setShowPlacefileModal(true)}
+              className="flex-1 rounded-xl border border-cyan-500/30 bg-cyan-950/40 py-2 text-center text-xs font-bold text-cyan-300 hover:bg-cyan-950/60"
+            >
+              Placefile Suite
+            </button>
+            <button
+              onClick={() => setShowPalModal(true)}
+              className="flex-1 rounded-xl border border-amber-500/30 bg-amber-950/40 py-2 text-center text-xs font-bold text-amber-300 hover:bg-amber-950/60"
+            >
+              Load .pal
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* 4. DEDICATED RIGHT SIDEBAR (Weather Intelligence & Analysis) */}
+      <aside
+        className={`absolute right-0 top-14 bottom-16 z-20 w-84 border-l border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur-2xl transition-transform duration-300 flex flex-col ${
+          rightDockOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-white/10 p-3.5 bg-slate-900/60">
+          <span className="text-xs font-black uppercase tracking-wider text-cyan-300">Weather Intelligence</span>
+          <span className="text-[10px] text-emerald-400 font-mono">● Active</span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs font-mono">
+          {/* Severe Threat Risk Score Gauge */}
+          <div className="rounded-2xl border border-red-500/30 bg-red-950/20 p-3.5 space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-bold uppercase text-red-400">Total Severe Risk Score</span>
+              <span className="text-2xl font-black text-white">84<span className="text-xs text-red-400">/100</span></span>
+            </div>
+            <div className="h-2 w-full rounded-full bg-slate-900 overflow-hidden border border-white/5">
+              <div className="h-full bg-red-500 rounded-full" style={{ width: '84%' }} />
+            </div>
+            <p className="text-[10px] text-slate-300 font-sans leading-tight">
+              Elevated supercell composite with favorable low-level helicity supporting mesocyclone rotation.
+            </p>
+          </div>
+
+          {/* Hyperlocal Neighborhood Readout */}
+          <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3.5 space-y-2 font-sans">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-white">Neighborhood Conditions</span>
+              <button onClick={() => setShowHyperlocal(true)} className="text-[10px] text-cyan-400 underline">Details</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div>Temp: <b className="text-white">78°F</b></div>
+              <div>Feels-Like: <b className="text-cyan-400">82°F</b></div>
+              <div>Dewpoint: <b className="text-emerald-400">68°F</b></div>
+              <div>Wet-Bulb: <b className="text-cyan-300">71°F</b></div>
+              <div>Pressure: <b className="text-slate-300">29.92 inHg</b></div>
+              <div>Humidity: <b className="text-slate-300">72%</b></div>
+            </div>
+          </div>
+
+          {/* Dedicated Analysis Tools Launcher */}
+          <div className="space-y-1.5 font-sans">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+              Interactive Analysis Tools
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  setCrossSectionMode((v) => !v);
+                  setMeasureMode(false);
+                }}
+                className={`rounded-xl border p-2 text-left font-bold transition ${
+                  crossSectionMode ? 'border-purple-400 bg-purple-950/50 text-purple-300' : 'border-white/10 bg-slate-900 text-slate-300'
+                }`}
+              >
+                ✂️ RHI Cut
+              </button>
+              <button
+                onClick={() => {
+                  const profile = generateThermodynamicSounding(currentSite.lat, currentSite.lon);
+                  setActiveSounding(profile);
+                }}
+                className="rounded-xl border border-white/10 bg-slate-900 p-2 text-left font-bold text-slate-300 hover:text-white"
+              >
+                📈 Skew-T
+              </button>
+              <button
+                onClick={() => {
+                  setMeasureMode((m) => !m);
+                  setCrossSectionMode(false);
+                }}
+                className={`rounded-xl border p-2 text-left font-bold transition ${
+                  measureMode ? 'border-cyan-400 bg-cyan-950/50 text-cyan-300' : 'border-white/10 bg-slate-900 text-slate-300'
+                }`}
+              >
+                📏 Measure
+              </button>
+              <button
+                onClick={handleGenerateMCD}
+                className="rounded-xl border border-amber-500/30 bg-amber-950/30 p-2 text-left font-bold text-amber-300 hover:bg-amber-950/50"
+              >
+                📝 AI MCD
+              </button>
+            </div>
+          </div>
+
+          {/* Embedded AI Copilot Panel */}
+          <div className="rounded-2xl border border-violet-500/30 bg-violet-950/20 p-3.5 space-y-2 font-sans">
+            <div className="flex items-center gap-2">
+              <span>🤖</span>
+              <span className="text-xs font-bold text-violet-300">AI Meteorologist Copilot</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Monitoring Doppler couplets, dual-pol debris drops, and thermodynamic soundings in real time.
+            </p>
+            <button
+              onClick={() => setShowAssistant(true)}
+              className="w-full rounded-xl bg-violet-600 py-1.5 text-xs font-bold text-white shadow-md hover:bg-violet-500"
+            >
+              Open Copilot Consultation
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* 5. FULL METEOROLOGICAL BOTTOM TIMELINE BAR */}
+      <footer className="absolute bottom-0 left-0 right-0 z-30 h-16 border-t border-white/10 bg-slate-950/95 px-6 flex items-center justify-between shadow-2xl backdrop-blur-2xl">
+        {/* Playback Steppers */}
+        <div className="flex items-center gap-2">
           <button
             onClick={() => stepFrame(-1)}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 hover:bg-white/10"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-slate-900 text-slate-300 hover:text-white"
           >
             ‹
           </button>
           <button
             onClick={() => setIsPlaying((p) => !p)}
             disabled={frames.length < 2}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-600 text-white shadow-lg transition hover:bg-cyan-500 disabled:opacity-40"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-600 text-white font-bold shadow-lg hover:bg-cyan-500"
           >
             {isPlaying ? '❚❚' : '▶'}
           </button>
           <button
             onClick={() => stepFrame(1)}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 hover:bg-white/10"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-slate-900 text-slate-300 hover:text-white"
           >
             ›
           </button>
-
-          <div className="flex items-center gap-2 px-1">
-            <input
-              type="range"
-              min={0}
-              max={Math.max(0, frames.length - 1)}
-              value={frameIndex}
-              onChange={(e) => {
-                setIsPlaying(false);
-                setFrameIndex(Number(e.target.value));
-              }}
-              className="w-32 sm:w-48 accent-cyan-400 cursor-pointer"
-            />
-          </div>
-
-          <span className="font-mono text-xs font-bold text-slate-200 min-w-[50px] text-center">
-            {loopLoading ? '...' : currentFrame?.label || 'LIVE'}
-          </span>
-
-          <button
-            onClick={goToLive}
-            className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider transition ${
-              currentFrame?.label === 'LIVE'
-                ? 'bg-emerald-500 text-slate-950 shadow-[0_0_8px_#10b981]'
-                : 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-            }`}
-          >
-            LIVE
-          </button>
         </div>
+
+        {/* Timeline Scrubber */}
+        <div className="flex-1 mx-6 flex items-center gap-4">
+          <input
+            type="range"
+            min={0}
+            max={Math.max(0, frames.length - 1)}
+            value={frameIndex}
+            onChange={(e) => {
+              setIsPlaying(false);
+              setFrameIndex(Number(e.target.value));
+            }}
+            className="flex-1 accent-cyan-400 cursor-pointer"
+          />
+          <span className="font-mono text-xs font-bold text-slate-300 min-w-[70px]">
+            {loopLoading ? 'Syncing…' : currentFrame?.label || 'LIVE'}
+          </span>
+        </div>
+
+        {/* LIVE Jump Button */}
+        <button
+          onClick={goToLive}
+          className={`rounded-full px-4 py-1.5 text-xs font-black uppercase tracking-wider transition ${
+            currentFrame?.label === 'LIVE'
+              ? 'bg-emerald-500 text-slate-950 shadow-[0_0_10px_#10b981]'
+              : 'border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20'
+          }`}
+        >
+          LIVE
+        </button>
       </footer>
 
-      {/* 6. DYNAMIC REFLECTIVITY LEGEND SCALE */}
-      <aside aria-label="Reflectivity legend" className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 flex h-6 items-center justify-between border-t border-white/10 bg-slate-950/90 px-4 text-[9px] font-mono backdrop-blur-md">
-        <span className="font-bold text-slate-400">
-          {product === 'mesh' ? 'HAIL (in):' : product === 'azshear' ? 'ROTATION:' : 'dBZ:'}
-        </span>
-        <div className="mx-3 flex-1 h-2 rounded-full overflow-hidden flex border border-white/10">
-          <div className="flex-1 bg-[#04e9e7]" />
-          <div className="flex-1 bg-[#019ff4]" />
-          <div className="flex-1 bg-[#0300f4]" />
-          <div className="flex-1 bg-[#02fd02]" />
-          <div className="flex-1 bg-[#01c501]" />
-          <div className="flex-1 bg-[#008e00]" />
-          <div className="flex-1 bg-[#fdf802]" />
-          <div className="flex-1 bg-[#e5bc00]" />
-          <div className="flex-1 bg-[#fd9500]" />
-          <div className="flex-1 bg-[#fd0000]" />
-          <div className="flex-1 bg-[#d40000]" />
-          <div className="flex-1 bg-[#f800fd]" />
-          <div className="flex-1 bg-[#9854c6]" />
-          <div className="flex-1 bg-[#ffffff]" />
-        </div>
-        <span className="text-slate-400">
-          {product === 'mesh' ? '0.5" • 1.0" • 1.75" • 2.5" • 4.0"+' :
-           product === 'azshear' ? '0.005 • 0.010 • 0.015 • 0.020+ s⁻¹' :
-           '5 • 15 • 30 • 45 • 60 • 70+'}
-        </span>
-      </aside>
-
-      {/* 7. SETTINGS & PALETTE SWITCHER */}
-      {settingsOpen && (
-        <div className="absolute right-16 top-16 z-30 w-72 rounded-2xl border border-white/15 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-2xl">
-          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-white">Palettes &amp; Layers</span>
-            <button onClick={() => setSettingsOpen(false)} className="text-slate-400 hover:text-white">✕</button>
-          </div>
-
-          <div className="space-y-3.5 text-xs">
-            <div>
-              <div className="mb-1.5 flex items-center justify-between font-bold text-cyan-300">
-                <span>Radar Color Palettes</span>
-                <button
-                  onClick={() => {
-                    setSettingsOpen(false);
-                    setShowPalModal(true);
-                  }}
-                  className="text-[10px] text-amber-400 underline hover:text-amber-300"
-                >
-                  + Load .pal File
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { key: 'radarscope', label: 'RadarScope' },
-                  { key: 'nws', label: 'NWS Classic' },
-                  { key: 'cod', label: 'COD Pastels' },
-                  { key: 'smooth', label: 'DG Noah' },
-                  { key: 'couplet', label: 'Couplet' },
-                  ...(palCurve ? [{ key: 'palFile', label: palCurve.name.slice(0, 10) }] : []),
-                ].map((p) => (
-                  <button
-                    key={p.key}
-                    onClick={() => setPalette(p.key as PaletteType)}
-                    className={`rounded-lg py-1 px-2 text-left text-[11px] font-bold transition ${
-                      palette === p.key ? 'bg-cyan-600 text-white shadow-md' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <label className="flex items-center justify-between text-slate-300">
-              <span>Show On-Map Radar Pills</span>
-              <input
-                type="checkbox"
-                checked={showRadarPills}
-                onChange={(e) => setShowRadarPills(e.target.checked)}
-                className="accent-cyan-500"
-              />
-            </label>
-          </div>
-        </div>
-      )}
-
-      {/* 8. RHI VERTICAL CROSS SECTION MODAL */}
+      {/* MODALS */}
       {crossSectionData && (
         <CrossSectionModal data={crossSectionData} onClose={() => setCrossSectionData(null)} />
       )}
-
-      {/* 9. MESOSCALE CONVECTIVE DISCUSSION (MCD) MODAL */}
+      {activeSounding && (
+        <SkewTSoundingModal sounding={activeSounding} onClose={() => setActiveSounding(null)} />
+      )}
+      {showThreatMatrix && (
+        <ThreatMatrixPanel onClose={() => setShowThreatMatrix(false)} />
+      )}
+      {showHyperlocal && (
+        <HyperlocalDashboardModal
+          lat={currentSite.lat}
+          lon={currentSite.lon}
+          siteName={currentSite.name}
+          onClose={() => setShowHyperlocal(false)}
+        />
+      )}
       {showMCDModal && (
         <MCDModal
           mcdText={mcdText}
@@ -771,18 +651,6 @@ export default function MesoVortexWX() {
           onRegenerate={handleGenerateMCD}
         />
       )}
-
-      {/* 10. SKEW-T SOUNDING MODAL */}
-      {activeSounding && (
-        <SkewTSoundingModal sounding={activeSounding} onClose={() => setActiveSounding(null)} />
-      )}
-
-      {/* 11. THREAT MATRIX MODAL */}
-      {showThreatMatrix && (
-        <ThreatMatrixPanel onClose={() => setShowThreatMatrix(false)} />
-      )}
-
-      {/* 12. GIBSON RIDGE (.pal) MODAL */}
       {showPalModal && (
         <PalColorTableModal
           onClose={() => setShowPalModal(false)}
@@ -792,19 +660,15 @@ export default function MesoVortexWX() {
           }}
         />
       )}
-
-      {/* 13. PLACEFILE MANAGER MODAL */}
       {showPlacefileModal && (
         <PlacefileManagerModal
           placefiles={placefiles}
           onClose={() => setShowPlacefileModal(false)}
-          onToggle={handleTogglePlacefile}
-          onAdd={handleAddPlacefile}
-          onDelete={handleDeletePlacefile}
+          onToggle={(id) => setPlacefiles((prev) => prev.map((p) => p.id === id ? { ...p, enabled: !p.enabled } : p))}
+          onAdd={(name, url) => setPlacefiles((prev) => [...prev, { id: `pf-${Date.now()}`, name, url, enabled: true }])}
+          onDelete={(id) => setPlacefiles((prev) => prev.filter((p) => p.id !== id))}
         />
       )}
-
-      {/* 14. AI ASSISTANT MODAL */}
       {showAssistant && (
         <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
           <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
@@ -815,11 +679,7 @@ export default function MesoVortexWX() {
           </div>
         </div>
       )}
-
-      {/* 15. QUAD SYNCHRO VIEW MODAL */}
       {showQuad && <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowQuad(false)} />}
-
-      {/* 16. SPOTTER REPORT MODAL */}
       {spotterCoords && (
         <SpotterReportModal
           currentCoords={spotterCoords}
@@ -827,8 +687,6 @@ export default function MesoVortexWX() {
           onSubmit={handleSpotterSubmit}
         />
       )}
-
-      {/* 17. EMERGENCY SIREN AUDIO ENGINE */}
       <EmergencyAlertTone />
     </div>
   );
