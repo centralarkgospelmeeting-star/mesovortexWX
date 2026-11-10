@@ -155,16 +155,15 @@ export class RadarSiteRegistry {
   }
 
   private static seedComprehensiveStations() {
-    RADAR_SITES.forEach((s) => {
-      const callsign = s.radarId || s.id.replace(/^[KPT]/, '');
+    for (const s of RADAR_SITES) {
       const stateMatch = s.name.match(/,\s*([A-Z]{2})\b/);
       this.registerStation({
         id: s.id,
-        callsign,
+        callsign: s.radarId,
         name: s.name,
         lat: s.lat,
         lon: s.lon,
-        elevationM: Math.round((s.elevation ?? 0) * 0.3048),
+        elevationM: Math.round(s.elevation * 0.3048),
         network: 'nexrad',
         country: 'US',
         state: stateMatch?.[1],
@@ -173,11 +172,11 @@ export class RadarSiteRegistry {
         supportedTilts: ['0.5', '0.9', '1.3', '1.8'],
         vcpMode: 'VCP 212 Convective',
       });
-    });
+    }
   }
 
   private static registerTdwr() {
-    const tdwrList: (Partial<RadarStation> & { elevationM?: number })[] = [
+    const tdwrList: Array<Partial<RadarStation> & { elevationM?: number }> = [
       { id: 'TADW', callsign: 'ADW', name: 'Andrews AFB TDWR, MD', lat: 38.81, lon: -76.867, elevationM: 105, state: 'MD' },
       { id: 'TATL', callsign: 'ATL', name: 'Atlanta Hartsfield TDWR, GA', lat: 33.647, lon: -84.262, elevationM: 328, state: 'GA' },
       { id: 'TBWI', callsign: 'BWI', name: 'Baltimore/Washington TDWR, MD', lat: 39.09, lon: -76.63, elevationM: 91, state: 'MD' },
@@ -224,13 +223,13 @@ export class RadarSiteRegistry {
       { id: 'TICH', callsign: 'ICH', name: 'Wichita TDWR, KS', lat: 37.507, lon: -97.437, elevationM: 412, state: 'KS' },
     ];
 
-    tdwrList.forEach((s) => {
+    for (const s of tdwrList) {
       this.registerStation({
-        id: s.id!,
-        callsign: s.callsign!,
-        name: s.name!,
-        lat: s.lat!,
-        lon: s.lon!,
+        id: s.id || 'TDWR',
+        callsign: s.callsign || 'TDWR',
+        name: s.name || 'TDWR',
+        lat: s.lat || 0,
+        lon: s.lon || 0,
         elevationM: s.elevationM ?? 180,
         network: 'tdwr',
         country: 'US',
@@ -240,6 +239,6 @@ export class RadarSiteRegistry {
         supportedTilts: ['0.2', '0.6', '1.0'],
         vcpMode: 'VCP 80 High-Res Airport',
       });
-    });
+    }
   }
 }
