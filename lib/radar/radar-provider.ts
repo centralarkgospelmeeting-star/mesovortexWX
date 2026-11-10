@@ -35,14 +35,16 @@ class NoaaWsR88DDriver implements RadarDriver {
   networkType = 'nexrad';
   private baseUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 
-  private mapProductCode(product: string, tilt: string, network: RadarNetwork): string {
+  private mapProductCode(product: string, network: RadarNetwork): string | null {
     const p = product.toLowerCase();
     if (network === 'tdwr') {
-      if (p === 'ref' || p === 'n0q' || p === 'n0r') return 'N0Q';
-      if (p === 'vel' || p === 'n0u' || p === 'n0v') return 'N0U';
-      return 'N0Q';
+      if (p === 'vel' || p === 'n0u' || p === 'n0v') return 'TV0';
+      if (p === 'ref' || p === 'n0q' || p === 'n0r') return 'TZL';
+      return null; // TDWR has no CC / ZDR on this service
     }
-    if (p === 'ref' || p === 'n0q') return 'N0Q';
+    if (p === 'cc' || p === 'zdr' || p === 'kdp' || p === 'n0c' || p === 'n0x' || p === 'n0k') {
+      return null; // IEM RIDGE does not publish these
+    }
     if (p === 'vel' || p === 'n0u') return 'N0U';
     if (p === 'srvel' || p === 'n0s') return 'N0S';
     if (p === 'tops') return 'NET';
@@ -51,7 +53,26 @@ class NoaaWsR88DDriver implements RadarDriver {
   }
 
   getTileUrl(req: RadarTileRequest): string {
-    const code = this.mapProductCode(req.product, req.tilt, req.station.network);
+    const national =
+      !req.station?.callsign ||
+      req.station.id === 'US' ||
+      req.station.callsign === 'US' ||
+      req.station.callsign.length < 3;
+
+    if (national) {
+      return `${this.baseUrl}/nexrad-n0q-900913/{z}/{x}/{y}.png`;
+    }
+
+    const code = this.mapProductCode(req.product, req.station.network);
+    if (!code) {
+      // Keep a valid reflectivity tile instead of an error image
+      return this.getTileUrl({ ...req, product: 'ref' });
+    }
+
+    // TDWR layer id is TDFW / TORD, not the 3-letter airport code
+    const id = req.station.network === 'tdwr' ? req.station.id : req.station.callsign;
+    return `${this.baseUrl}/ridge::${id}-${code}-0/{z}/{x}/{y}.png`;
+  } code = this.mapProductCode(req.product, req.tilt, req.station.network);
     const callsign = req.station.callsign;
     return `${this.baseUrl}/ridge::${callsign}-${code}-0/{z}/{x}/{y}.png`;
   }
