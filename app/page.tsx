@@ -138,8 +138,17 @@ export default function MesoVortexWX() {
       activeTab,
       fastScan,
       dualPane,
-      layers: { showRadarPills, showLightning, showMetars, showLSR, showWatches },
-    };
+            layers: {
+        showRadarPills,
+        showLightning,
+        showMetars,
+        showLSR,
+        showWatches,
+        showWarnings: true,
+        showSatellite: false,
+        showMping: false,
+        showSpotterReports: false,
+      },
     saveWorkspacePrefs(prefs);
   }, [workspaceHydrated, radarSite, product, tilt, palette, activeTab, fastScan, dualPane, showRadarPills, showLightning, showMetars, showLSR, showWatches]);
 
