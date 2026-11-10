@@ -3,6 +3,7 @@
 
 export type RadarNetwork = 'nexrad' | 'tdwr' | 'mrms' | 'research' | 'private';
 export type RadarNetworkType = RadarNetwork;
+
 export type RadarStation = {
   id: string;
   callsign: string;
@@ -38,13 +39,11 @@ class NoaaWsR88DDriver implements RadarDriver {
 
   private mapProductCode(product: string, tilt: string, network: RadarNetwork): string {
     const p = product.toLowerCase();
-    // Simplified product mapping – expand as needed
     if (network === 'tdwr') {
       if (p === 'ref' || p === 'n0q' || p === 'n0r') return 'N0Q';
       if (p === 'vel' || p === 'n0u' || p === 'n0v') return 'N0U';
       return 'N0Q';
     }
-    // NEXRAD
     if (p === 'ref' || p === 'n0q') return 'N0Q';
     if (p === 'vel' || p === 'n0u') return 'N0U';
     if (p === 'srvel' || p === 'n0s') return 'N0S';
@@ -107,7 +106,6 @@ export class RadarSiteRegistry {
 
   static registerStation(station: RadarStation) {
     this.stations.set(station.id.toUpperCase(), station);
-    // Also index by callsign for convenience
     if (station.callsign) {
       this.stations.set(station.callsign.toUpperCase(), station);
     }
@@ -119,7 +117,6 @@ export class RadarSiteRegistry {
     const station = this.stations.get(key);
     if (station) return station;
 
-    // Fallback so the API never hard-crashes
     return {
       id: key,
       callsign: key.replace(/^K/, '').slice(0, 3),
@@ -136,7 +133,6 @@ export class RadarSiteRegistry {
   }
 
   static getDriverForStation(station: RadarStation): RadarDriver {
-    // For now both NEXRAD and TDWR use the same IEM RIDGE-style driver
     return defaultDriver;
   }
 
@@ -153,7 +149,6 @@ export class RadarSiteRegistry {
     return list;
   }
 
-  /** Core CONUS NEXRAD sites (subset + common ones). Expand as needed. */
   private static registerCoreNexrad() {
     const nexrad: (Partial<RadarStation> & { elevationM?: number })[] = [
       { id: 'KLZK', callsign: 'LZK', name: 'Little Rock, AR', lat: 34.836, lon: -92.262, elevationM: 174, state: 'AR' },
@@ -207,7 +202,6 @@ export class RadarSiteRegistry {
     });
   }
 
-  /** Full 45-site TDWR network (no fake entries) */
   private static registerTdwr() {
     const tdwrList: (Partial<RadarStation> & { elevationM?: number })[] = [
       { id: 'TADW', callsign: 'ADW', name: 'Andrews AFB TDWR, MD', lat: 38.810, lon: -76.867, elevationM: 105, state: 'MD' },
