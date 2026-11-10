@@ -132,20 +132,16 @@ export class RadarSiteRegistry {
     };
   }
 
-  static getDriverForStation(station: RadarStation): RadarDriver {
-    return defaultDriver;
-  }
-
-  static getAllStations(network?: RadarNetwork | RadarNetworkType): RadarStation[] {
+    static getAllStations(network?: RadarNetwork | RadarNetworkType): RadarStation[] {
     this.ensureInit();
     const seen = new Set<string>();
     const list: RadarStation[] = [];
-    for (const s of this.stations.values()) {
-      if (seen.has(s.id)) continue;
-      if (network && s.network !== network) continue;
+    Array.from(this.stations.values()).forEach((s) => {
+      if (seen.has(s.id)) return;
+      if (network && s.network !== network) return;
       seen.add(s.id);
       list.push(s);
-    }
+    });
     return list;
   }
 
