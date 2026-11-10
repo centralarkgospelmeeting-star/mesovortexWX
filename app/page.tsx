@@ -285,7 +285,7 @@ export default function MesoVortexWX() {
         <button onClick={() => setShowAssistant(true)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-500/40 bg-violet-600/20 text-violet-300 shadow-xl backdrop-blur-xl hover:bg-violet-600/30" title="AI Meteorologist Copilot">🤖</button>
       </div>
 
-      <      <LayerManagerPanel open={showLayerManager} onClose={() => setShowLayerManager(false)} state={{ showRadarPills, showLightning, showMetars, showLSR, showWatches, showWarnings: true, showSatellite: false, showMping: false, showSpotterReports: false }} onChange={(patch) => {
+      <LayerManagerPanel open={showLayerManager} onClose={() => setShowLayerManager(false)} state={{ showRadarPills, showLightning, showMetars, showLSR, showWatches, showWarnings: true, showSatellite: false, showMping: false, showSpotterReports: false }} onChange={(patch) => {
         if (typeof patch.showRadarPills === 'boolean') setShowRadarPills(patch.showRadarPills);
         if (typeof patch.showLightning === 'boolean') setShowLightning(patch.showLightning);
         if (typeof patch.showMetars === 'boolean') setShowMetars(patch.showMetars);
