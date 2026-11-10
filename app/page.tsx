@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { RadarMap, BasemapType } from '../components/RadarMap';
+import { RadarMap, BasemapId } from '../components/RadarMap';
 import { WeatherWiseRadarCard } from '../components/WeatherWiseRadarCard';
 import { WeatherWiseAlertsPanel, WeatherAlertItem } from '../components/WeatherWiseAlertsPanel';
 import { RADAR_SITES } from '../lib/radar-config';
@@ -11,14 +11,19 @@ type RadarProduct = 'ref' | 'ref_x' | 'max_ref' | 'vel' | 'cc' | 'zdr';
 type TopTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
 type SpcDay = 'Day 1' | 'Day 2' | 'Day 3';
 
+const BASEMAP_STORAGE_KEY = 'mesovortex_basemap_preference';
+
 export default function MesoVortexWorkstation() {
   const [tab, setTab] = useState<TopTab>('Radar');
   const [spcDay, setSpcDay] = useState<SpcDay>('Day 1');
   const [product, setProduct] = useState<RadarProduct>('ref');
   const [tilt, setTilt] = useState('0.5');
-  const [radarSite, setRadarSite] = useState('US'); // Starts centered on the United States
-  const [basemap, setBasemap] = useState<BasemapType>('mapbox'); // Custom Mapbox Style is DEFAULT on startup
+  const [radarSite, setRadarSite] = useState('US');
   const [isPlaying, setIsPlaying] = useState(false);
+
+  // Basemap State with local storage persistence and custom-weather default
+  const [basemap, setBasemap] = useState<BasemapId>('custom-weather');
+  const [basemapStatus, setBasemapStatus] = useState<string>('Custom Weather (Default)');
 
   // Alerts Panel state
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -27,6 +32,44 @@ export default function MesoVortexWorkstation() {
 
   const currentSite =
     RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
+
+  // 1. Load saved basemap preference from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(BASEMAP_STORAGE_KEY) as BasemapId | null;
+      if (saved === 'satellite-streets' || saved === 'custom-weather') {
+        setBasemap(saved);
+        setBasemapStatus(saved === 'custom-weather' ? 'Custom Weather (Default)' : 'Satellite Streets');
+      }
+    } catch {
+      // localStorage unavailable fallback
+    }
+  }, []);
+
+  // 2. Save basemap preference to localStorage on change
+  const handleSelectBasemap = (selected: BasemapId) => {
+    setBasemap(selected);
+    setBasemapStatus(selected === 'custom-weather' ? 'Custom Weather (Default)' : 'Satellite Streets');
+    try {
+      localStorage.setItem(BASEMAP_STORAGE_KEY, selected);
+    } catch {
+      // localStorage unavailable fallback
+    }
+  };
+
+  // 3. Fallback handler: automatically switch to Satellite Streets if custom style fails
+  const handleStyleLoadFailed = (failedBasemap: BasemapId) => {
+    if (failedBasemap === 'custom-weather') {
+      console.warn('[Basemap Fallback Triggered] Switching to Satellite Streets');
+      setBasemap('satellite-streets');
+      setBasemapStatus('Satellite Streets (Fallback)');
+      try {
+        localStorage.setItem(BASEMAP_STORAGE_KEY, 'satellite-streets');
+      } catch {
+        // localStorage unavailable fallback
+      }
+    }
+  };
 
   // Fetch real-time NWS Alerts
   useEffect(() => {
@@ -69,23 +112,34 @@ export default function MesoVortexWorkstation() {
           <button
             onClick={() => setMenuOpen((v) => !v)}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-xl hover:bg-amber-300 transition font-black text-lg border border-amber-300 cursor-pointer"
-            title="Menu"
+            title="Menu & Layer Selector"
           >
             ☰
           </button>
 
-          {/* Quick Basemap Toggle: Mapbox Style vs Satellite */}
-          <button
-            onClick={() => setBasemap((b) => (b === 'mapbox' ? 'satellite' : 'mapbox'))}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-black shadow-xl border transition cursor-pointer ${
-              basemap === 'mapbox'
-                ? 'bg-slate-900 text-cyan-300 border-cyan-400/50'
-                : 'bg-slate-900 text-emerald-300 border-emerald-400/50'
-            }`}
-            title="Switch between Custom Mapbox style and Satellite"
-          >
-            <span>{basemap === 'mapbox' ? '🗺️ Custom Mapbox' : '🛰️ Satellite'}</span>
-          </button>
+          {/* Basemap Selector Pill */}
+          <div className="flex items-center rounded-full border border-slate-700 bg-slate-950/90 p-0.5 shadow-xl backdrop-blur-md">
+            <button
+              onClick={() => handleSelectBasemap('custom-weather')}
+              className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                basemap === 'custom-weather'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Custom Weather
+            </button>
+            <button
+              onClick={() => handleSelectBasemap('satellite-streets')}
+              className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                basemap === 'satellite-streets'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Satellite Streets
+            </button>
+          </div>
         </div>
 
         {/* Center Floating White Pill With MesoVortex Logo */}
@@ -106,6 +160,10 @@ export default function MesoVortexWorkstation() {
               <span>MesoVortex</span>
               <span className="text-[10px] text-slate-400">▾</span>
             </div>
+
+            <button className="text-slate-400 hover:text-slate-600 px-1 text-xs cursor-pointer">
+              🔍
+            </button>
 
             {/* Mode Switcher Tabs */}
             <div className="flex items-center gap-1 font-bold text-xs">
@@ -154,7 +212,7 @@ export default function MesoVortexWorkstation() {
         </button>
       </div>
 
-      {/* 3. FULL MAP CANVAS (Centered on the United States with Custom Mapbox Default) */}
+      {/* 3. FULL MAP CANVAS (Applies to all radar, satellite, warnings, SPC, and spotter layers) */}
       <div className="absolute inset-0">
         <RadarMap
           product={product === 'ref_x' || product === 'max_ref' ? 'ref' : product}
@@ -164,6 +222,7 @@ export default function MesoVortexWorkstation() {
           tilt={tilt}
           spcDay={spcDay}
           onSelectSite={(id) => setRadarSite(id)}
+          onStyleLoadFailed={handleStyleLoadFailed}
         />
       </div>
 
@@ -190,45 +249,70 @@ export default function MesoVortexWorkstation() {
         />
       )}
 
-      {/* Slide-out Menu */}
+      {/* Slide-out Layer Menu */}
       {menuOpen && (
         <div className="fixed inset-0 z-50 flex bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="w-80 bg-white p-5 shadow-2xl space-y-4 text-slate-800">
+          <div className="w-80 bg-white p-5 shadow-2xl space-y-5 text-slate-800">
             <div className="flex items-center justify-between border-b pb-3 font-extrabold text-base">
               <div className="flex items-center gap-2">
                 <Image src="/logo.png" alt="MesoVortex" width={24} height={24} className="rounded-full" />
-                <span>MesoVortex Menu</span>
+                <span>MesoVortex Layers</span>
               </div>
               <button onClick={() => setMenuOpen(false)}>✕</button>
             </div>
-            <div className="space-y-2 text-xs font-bold">
-              <div
+
+            {/* Basemap Selection Section */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Basemap Selector
+              </span>
+              <div className="space-y-1.5">
+                <button
+                  onClick={() => {
+                    handleSelectBasemap('custom-weather');
+                    setMenuOpen(false);
+                  }}
+                  className={`w-full text-left rounded-xl p-2.5 text-xs font-bold transition flex items-center justify-between ${
+                    basemap === 'custom-weather'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>🎨 Custom Weather (Default)</span>
+                  {basemap === 'custom-weather' && <span>✓</span>}
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleSelectBasemap('satellite-streets');
+                    setMenuOpen(false);
+                  }}
+                  className={`w-full text-left rounded-xl p-2.5 text-xs font-bold transition flex items-center justify-between ${
+                    basemap === 'satellite-streets'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>🛰️ Satellite Streets</span>
+                  {basemap === 'satellite-streets' && <span>✓</span>}
+                </button>
+              </div>
+              <div className="text-[10px] text-slate-500 pt-1">
+                Active: <b>{basemapStatus}</b>
+              </div>
+            </div>
+
+            {/* View Reset */}
+            <div className="border-t pt-3 space-y-2 text-xs font-bold">
+              <button
                 onClick={() => {
                   setRadarSite('US');
                   setMenuOpen(false);
                 }}
-                className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"
+                className="w-full text-left rounded-xl p-2.5 hover:bg-slate-100 text-slate-700"
               >
                 🗺️ Reset View to Entire United States
-              </div>
-              <div
-                onClick={() => {
-                  setBasemap('mapbox');
-                  setMenuOpen(false);
-                }}
-                className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer text-cyan-700"
-              >
-                🎨 Custom Mapbox Basemap (cmw9hk6p6001n01s1hch23fhb)
-              </div>
-              <div
-                onClick={() => {
-                  setBasemap('satellite');
-                  setMenuOpen(false);
-                }}
-                className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer text-emerald-700"
-              >
-                🛰️ High-Resolution Satellite Basemap
-              </div>
+              </button>
             </div>
           </div>
           <div className="flex-1" onClick={() => setMenuOpen(false)} />
