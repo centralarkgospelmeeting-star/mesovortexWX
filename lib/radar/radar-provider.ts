@@ -35,7 +35,7 @@ class NoaaWsR88DDriver implements RadarDriver {
   networkType = 'nexrad';
   private baseUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 
-  private mapProductCode(product: string, network: RadarNetwork): string | null {
+    private mapProductCode(product: string, network: RadarNetwork): string | null {
     const p = product.toLowerCase();
     if (network === 'tdwr') {
       if (p === 'vel' || p === 'n0u' || p === 'n0v') return 'TV0';
@@ -50,6 +50,28 @@ class NoaaWsR88DDriver implements RadarDriver {
     if (p === 'tops') return 'NET';
     if (p === 'vil') return 'NVL';
     return 'N0Q';
+  }
+
+  getTileUrl(req: RadarTileRequest): string {
+    const national =
+      !req.station?.callsign ||
+      req.station.id === 'US' ||
+      req.station.callsign === 'US' ||
+      req.station.callsign.length < 3;
+
+    if (national) {
+      return `${this.baseUrl}/nexrad-n0q-900913/{z}/{x}/{y}.png`;
+    }
+
+    const code = this.mapProductCode(req.product, req.station.network);
+    if (!code) {
+      // Keep a valid reflectivity tile instead of an error image
+      return this.getTileUrl({ ...req, product: 'ref' });
+    }
+
+    // TDWR layer id is TDFW / TORD, not the 3-letter airport code
+    const id = req.station.network === 'tdwr' ? req.station.id : req.station.callsign;
+    return `${this.baseUrl}/ridge::${id}-${code}-0/{z}/{x}/{y}.png`;
   }
 
   getTileUrl(req: RadarTileRequest): string {
