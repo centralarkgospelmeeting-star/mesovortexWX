@@ -126,7 +126,7 @@ export default function MesoVortexWX() {
     setWorkspaceHydrated(true);
   }, []);
 
-  // P1: persist workspace preferences
+   // P1: persist workspace preferences
   useEffect(() => {
     if (!workspaceHydrated) return;
     const prefs: WorkspacePrefsV1 = {
@@ -138,7 +138,7 @@ export default function MesoVortexWX() {
       activeTab,
       fastScan,
       dualPane,
-            layers: {
+      layers: {
         showRadarPills,
         showLightning,
         showMetars,
@@ -149,6 +149,7 @@ export default function MesoVortexWX() {
         showMping: false,
         showSpotterReports: false,
       },
+    };
     saveWorkspacePrefs(prefs);
   }, [workspaceHydrated, radarSite, product, tilt, palette, activeTab, fastScan, dualPane, showRadarPills, showLightning, showMetars, showLSR, showWatches]);
 
