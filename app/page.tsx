@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { RadarMap, BasemapId } from '../components/RadarMap';
+import { RadarMap, BasemapType } from '../components/RadarMap';
 import { WeatherWiseRadarCard } from '../components/WeatherWiseRadarCard';
 import { WeatherWiseAlertsPanel, WeatherAlertItem } from '../components/WeatherWiseAlertsPanel';
 import { RADAR_SITES } from '../lib/radar-config';
@@ -21,9 +21,9 @@ export default function MesoVortexWorkstation() {
   const [radarSite, setRadarSite] = useState('US');
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Basemap State with local storage persistence and custom-weather default
-  const [basemap, setBasemap] = useState<BasemapId>('custom-weather');
-  const [basemapStatus, setBasemapStatus] = useState<string>('Custom Weather (Default)');
+  // SATELLITE IS DEFAULT ON STARTUP: satellite-streets
+  const [basemap, setBasemap] = useState<BasemapType>('satellite-streets');
+  const [basemapStatus, setBasemapStatus] = useState<string>('Satellite Streets (Default)');
 
   // Alerts Panel state
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -36,38 +36,24 @@ export default function MesoVortexWorkstation() {
   // 1. Load saved basemap preference from localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(BASEMAP_STORAGE_KEY) as BasemapId | null;
+      const saved = localStorage.getItem(BASEMAP_STORAGE_KEY) as BasemapType | null;
       if (saved === 'satellite-streets' || saved === 'custom-weather') {
         setBasemap(saved);
-        setBasemapStatus(saved === 'custom-weather' ? 'Custom Weather (Default)' : 'Satellite Streets');
+        setBasemapStatus(saved === 'satellite-streets' ? 'Satellite Streets (Default)' : 'Custom Weather');
       }
     } catch {
-      // localStorage unavailable fallback
+      // localStorage fallback
     }
   }, []);
 
-  // 2. Save basemap preference to localStorage on change
-  const handleSelectBasemap = (selected: BasemapId) => {
+  // 2. Save preference to localStorage on user switch
+  const handleSelectBasemap = (selected: BasemapType) => {
     setBasemap(selected);
-    setBasemapStatus(selected === 'custom-weather' ? 'Custom Weather (Default)' : 'Satellite Streets');
+    setBasemapStatus(selected === 'satellite-streets' ? 'Satellite Streets (Default)' : 'Custom Weather');
     try {
       localStorage.setItem(BASEMAP_STORAGE_KEY, selected);
     } catch {
-      // localStorage unavailable fallback
-    }
-  };
-
-  // 3. Fallback handler: automatically switch to Satellite Streets if custom style fails
-  const handleStyleLoadFailed = (failedBasemap: BasemapId) => {
-    if (failedBasemap === 'custom-weather') {
-      console.warn('[Basemap Fallback Triggered] Switching to Satellite Streets');
-      setBasemap('satellite-streets');
-      setBasemapStatus('Satellite Streets (Fallback)');
-      try {
-        localStorage.setItem(BASEMAP_STORAGE_KEY, 'satellite-streets');
-      } catch {
-        // localStorage unavailable fallback
-      }
+      // localStorage fallback
     }
   };
 
@@ -117,27 +103,27 @@ export default function MesoVortexWorkstation() {
             ☰
           </button>
 
-          {/* Basemap Selector Pill */}
+          {/* Quick Basemap Toggle: Satellite vs Custom Style */}
           <div className="flex items-center rounded-full border border-slate-700 bg-slate-950/90 p-0.5 shadow-xl backdrop-blur-md">
             <button
-              onClick={() => handleSelectBasemap('custom-weather')}
-              className={`rounded-full px-3 py-1 text-xs font-bold transition ${
-                basemap === 'custom-weather'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Custom Weather
-            </button>
-            <button
               onClick={() => handleSelectBasemap('satellite-streets')}
-              className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+              className={`rounded-full px-3 py-1 text-xs font-bold transition cursor-pointer ${
                 basemap === 'satellite-streets'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Satellite Streets
+              🛰️ Satellite
+            </button>
+            <button
+              onClick={() => handleSelectBasemap('custom-weather')}
+              className={`rounded-full px-3 py-1 text-xs font-bold transition cursor-pointer ${
+                basemap === 'custom-weather'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              🎨 Custom Mapbox
             </button>
           </div>
         </div>
@@ -212,7 +198,7 @@ export default function MesoVortexWorkstation() {
         </button>
       </div>
 
-      {/* 3. FULL MAP CANVAS (Applies to all radar, satellite, warnings, SPC, and spotter layers) */}
+      {/* 3. FULL MAP CANVAS (Satellite Streets Default) */}
       <div className="absolute inset-0">
         <RadarMap
           product={product === 'ref_x' || product === 'max_ref' ? 'ref' : product}
@@ -222,7 +208,6 @@ export default function MesoVortexWorkstation() {
           tilt={tilt}
           spcDay={spcDay}
           onSelectSite={(id) => setRadarSite(id)}
-          onStyleLoadFailed={handleStyleLoadFailed}
         />
       </div>
 
@@ -269,21 +254,6 @@ export default function MesoVortexWorkstation() {
               <div className="space-y-1.5">
                 <button
                   onClick={() => {
-                    handleSelectBasemap('custom-weather');
-                    setMenuOpen(false);
-                  }}
-                  className={`w-full text-left rounded-xl p-2.5 text-xs font-bold transition flex items-center justify-between ${
-                    basemap === 'custom-weather'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  <span>🎨 Custom Weather (Default)</span>
-                  {basemap === 'custom-weather' && <span>✓</span>}
-                </button>
-
-                <button
-                  onClick={() => {
                     handleSelectBasemap('satellite-streets');
                     setMenuOpen(false);
                   }}
@@ -293,8 +263,23 @@ export default function MesoVortexWorkstation() {
                       : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
                 >
-                  <span>🛰️ Satellite Streets</span>
+                  <span>🛰️ Satellite Streets (Default)</span>
                   {basemap === 'satellite-streets' && <span>✓</span>}
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleSelectBasemap('custom-weather');
+                    setMenuOpen(false);
+                  }}
+                  className={`w-full text-left rounded-xl p-2.5 text-xs font-bold transition flex items-center justify-between ${
+                    basemap === 'custom-weather'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>🎨 Custom Weather Style</span>
+                  {basemap === 'custom-weather' && <span>✓</span>}
                 </button>
               </div>
               <div className="text-[10px] text-slate-500 pt-1">
