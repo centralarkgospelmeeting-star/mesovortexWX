@@ -4,20 +4,19 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { RADAR_SITES } from '../lib/radar-config';
+import { RadarSiteRegistry, RadarStation, RadarNetworkType } from '../lib/radar/radar-provider';
 
 export type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
+export type BasemapType = 'satellite-streets' | 'custom-weather';
 
-export type BasemapId = 'satellite-streets' | 'custom-weather' | 'mapbox' | 'satellite';
-export type BasemapType = BasemapId;
-
-export interface RadarMapProps {
+interface RadarMapProps {
   product?: string;
   radarSite?: string;
   mode?: ModeTab;
   basemap?: BasemapType;
   tilt?: string;
   spcDay?: 'Day 1' | 'Day 2' | 'Day 3';
+  filterNetwork?: RadarNetworkType;
   onSelectSite?: (siteId: string) => void;
   onStyleLoadFailed?: (failedBasemap: any) => void;
 }
@@ -47,8 +46,7 @@ const SPC_FILL_ID = 'mv-spc-fill';
 const SPC_LINE_ID = 'mv-spc-line';
 
 function buildMapboxRasterStyle(basemap: BasemapType): StyleSpecification {
-  // SATELLITE IS DEFAULT: Loads mapbox/satellite-streets-v12
-  const isCustom = basemap === 'custom-weather' || basemap === 'mapbox';
+  const isCustom = basemap === 'custom-weather';
   const stylePath = isCustom ? CUSTOM_STYLE_ID : SATELLITE_STREETS_ID;
   const tileUrl = `https://api.mapbox.com/styles/v1/${stylePath}/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`;
 
@@ -76,20 +74,22 @@ export function RadarMap({
   product = 'ref',
   radarSite = 'KLZK',
   mode = 'Radar',
-  basemap = 'satellite-streets', // DEFAULT: Satellite
+  basemap = 'satellite-streets',
   tilt = '0.5',
   spcDay = 'Day 1',
+  filterNetwork,
   onSelectSite,
   onStyleLoadFailed,
 }: RadarMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const siteMarkersRef = useRef<maplibregl.Marker[]>([]);
 
-  const site =
-    RADAR_SITES.find((s) => s.id === radarSite || s.radarId === radarSite) ||
-    RADAR_SITES[0];
+  // Resolve station from the dynamic registry
+  const station: RadarStation = RadarSiteRegistry.getStation(radarSite);
 
+  // 1. Live NWS Warning Polygons (WeatherWise Dual-Stroke Style)
   const updateWarnings = useCallback((map: MapLibreMap) => {
     fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert')
       .then((res) => res.json())
@@ -194,6 +194,7 @@ export function RadarMap({
       .catch((err) => console.warn('[Warnings Notice]:', err));
   }, []);
 
+  // 2. SPC Convective Outlooks
   const updateSpcOutlooks = useCallback(
     (map: MapLibreMap) => {
       fetch('https://www.spc.noaa.gov/products/outlook/day1otlk_cat.lyr.geojson')
@@ -251,6 +252,7 @@ export function RadarMap({
     [mode]
   );
 
+  // 3. Dynamic Radar Layer via Registered Driver
   const updateRadar = useCallback(
     (map: MapLibreMap) => {
       let tileUrl = '';
@@ -260,18 +262,9 @@ export function RadarMap({
       } else if (mode === 'Satellite') {
         tileUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-east-vis-1km-900913/{z}/{x}/{y}.png';
       } else {
-        let productCode = 'N0B';
-        if (product === 'vel') {
-          productCode = tilt === '0.9' ? 'N1U' : tilt === '1.3' ? 'N2U' : 'N0U';
-        } else if (product === 'cc') {
-          productCode = 'N0C';
-        } else if (product === 'zdr') {
-          productCode = 'N0X';
-        } else {
-          productCode = tilt === '0.9' ? 'N1B' : tilt === '1.3' ? 'N2B' : 'N0B';
-        }
-
-        tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
+        // Query through the driver for this station
+        const driver = RadarSiteRegistry.getDriverForStation(station);
+        tileUrl = driver.getTileUrl({ station, product, tilt });
       }
 
       if (map.getLayer(RADAR_LAYER_ID)) map.removeLayer(RADAR_LAYER_ID);
@@ -299,9 +292,60 @@ export function RadarMap({
         beforeId
       );
     },
-    [mode, product, tilt, site.radarId]
+    [mode, product, tilt, station]
   );
 
+  // 4. Render All Stations as WeatherWise On-Map Pills
+  const renderAllStationPills = useCallback(
+    (map: MapLibreMap) => {
+      siteMarkersRef.current.forEach((m) => m.remove());
+      siteMarkersRef.current = [];
+
+      const allStations = RadarSiteRegistry.getAllStations(filterNetwork);
+
+      allStations.forEach((s) => {
+        const isActive = s.id === radarSite || s.callsign === radarSite;
+
+        let badgePrefix = '';
+        let badgeClass = 'ww-radar-pill';
+
+        if (s.network === 'tdwr') {
+          badgePrefix = '✈️ ';
+          badgeClass += ' border-purple-400 text-purple-200';
+        } else if (s.network === 'mobile') {
+          badgePrefix = '🚚 ';
+          badgeClass += ' border-amber-400 text-amber-200';
+        } else if (s.network === 'research') {
+          badgePrefix = '🔬 ';
+          badgeClass += ' border-cyan-400 text-cyan-200';
+        } else if (s.network === 'spotter') {
+          badgePrefix = '📡 ';
+          badgeClass += ' border-pink-400 text-pink-200';
+        }
+
+        if (isActive) badgeClass += ' active';
+
+        const pill = document.createElement('div');
+        pill.className = badgeClass;
+        pill.title = `${s.name} [${s.network.toUpperCase()}]`;
+        pill.innerHTML = `<span class="ww-dot"></span><span>${badgePrefix}${s.callsign}</span>`;
+        
+        pill.onclick = (e) => {
+          e.stopPropagation();
+          onSelectSite?.(s.id);
+        };
+
+        const marker = new maplibregl.Marker({ element: pill })
+          .setLngLat([s.lon, s.lat])
+          .addTo(map);
+
+        siteMarkersRef.current.push(marker);
+      });
+    },
+    [radarSite, filterNetwork, onSelectSite]
+  );
+
+  // Initialize Map
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -321,8 +365,7 @@ export function RadarMap({
     mapRef.current = map;
 
     map.on('error', (e) => {
-      if (e.error && (basemap === 'custom-weather' || basemap === 'mapbox') && onStyleLoadFailed) {
-        console.error('[Mapbox Style Warning] Falling back:', e.error);
+      if (e.error && basemap === 'custom-weather' && onStyleLoadFailed) {
         onStyleLoadFailed('satellite-streets');
       }
     });
@@ -337,21 +380,7 @@ export function RadarMap({
       updateWarnings(map);
       updateSpcOutlooks(map);
       updateRadar(map);
-
-      RADAR_SITES.forEach((s) => {
-        const isActive = s.id === radarSite || s.radarId === radarSite;
-        const pill = document.createElement('div');
-        pill.className = `ww-radar-pill ${isActive ? 'active' : ''}`;
-        pill.innerHTML = `<span class="ww-dot"></span><span>${s.radarId}</span>`;
-        pill.onclick = (e) => {
-          e.stopPropagation();
-          onSelectSite?.(s.id);
-        };
-
-        new maplibregl.Marker({ element: pill })
-          .setLngLat([s.lon, s.lat])
-          .addTo(map);
-      });
+      renderAllStationPills(map);
     });
 
     return () => {
@@ -361,6 +390,7 @@ export function RadarMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basemap]);
 
+  // Update on product, tilt, or station changes
   useEffect(() => {
     if (mapRef.current && mapReady) {
       updateRadar(mapRef.current);
@@ -368,14 +398,22 @@ export function RadarMap({
     }
   }, [product, tilt, spcDay, mapReady, updateRadar, updateSpcOutlooks]);
 
+  // Update station pills when site or filter changes
+  useEffect(() => {
+    if (mapRef.current && mapReady) {
+      renderAllStationPills(mapRef.current);
+    }
+  }, [radarSite, filterNetwork, mapReady, renderAllStationPills]);
+
+  // Camera tracking
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
     if (radarSite !== 'US') {
-      map.flyTo({ center: [site.lon, site.lat], zoom: 7.5, duration: 1100 });
+      map.flyTo({ center: [station.lon, station.lat], zoom: 7.5, duration: 1100 });
     }
-  }, [site.lon, site.lat, radarSite, mapReady]);
+  }, [station.lon, station.lat, radarSite, mapReady]);
 
   return (
     <div style={{ position: 'absolute', inset: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}>
