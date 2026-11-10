@@ -148,7 +148,7 @@ export class RadarSiteRegistry {
   }
 
   private static seedComprehensiveStations() {
-    RADAR_SITES.forEach((s) => {
+       RADAR_SITES.forEach((s: any) => {
       const callsign = s.radarId || s.id.replace(/^[KPT]/, '');
       this.registerStation({
         id: s.id,
