@@ -272,4 +272,77 @@ export default function MesoVortexWX() {
         <button onClick={() => setShowThreatMatrix(true)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/50 bg-red-600/30 text-red-200 shadow-xl backdrop-blur-xl hover:bg-red-600/50 transition" title="Severe Threat Matrix & Risk Score (0-100)">📊</button>
         <button onClick={() => { const profile = generateThermodynamicSounding(currentSite.lat, currentSite.lon); setActiveSounding(profile); }} className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition" title="Skew-T Sounding & Hodograph at Radar Site">📈</button>
         <button onClick={() => setShowPlacefileModal(true)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/50 bg-cyan-600/30 text-cyan-200 shadow-xl backdrop-blur-xl hover:bg-cyan-600/50 transition" title="PlacefileNation Suite (54 Feeds)">📡</button>
-       
+        <button onClick={() => setShowPalModal(true)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-600/30 text-amber-200 shadow-xl backdrop-blur-xl hover:bg-amber-600/50 transition" title="Load Gibson Ridge (.pal) Color Table">📁</button>
+        <button onClick={() => setShowLightning((v) => !v)} className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${showLightning ? 'border-amber-400/50 bg-amber-500/20 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'}`} title="Toggle Live Lightning (GOES GLM)">⚡</button>
+        <button onClick={() => setShowLSR((v) => !v)} className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${showLSR ? 'border-sky-400/50 bg-sky-500/20 text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'}`} title="Toggle NWS Storm Reports (LSR)">🌪️</button>
+        <button onClick={() => setShowWatches((v) => !v)} className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${showWatches ? 'border-rose-400/50 bg-rose-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'}`} title="Toggle Watch Boxes">🛡️</button>
+        <button onClick={() => setShowMetars((v) => !v)} className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${showMetars ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.35)]' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'}`} title="Toggle Airport METAR Stations">🌡️</button>
+        <button onClick={() => setShowRadarPills((v) => !v)} className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${showRadarPills ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-300' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'}`} title="Toggle On-Map Radar Tower Pills">🛰️</button>
+        <button onClick={() => setShowLayerManager((v) => !v)} className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${showLayerManager ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-300' : 'border-white/10 bg-slate-950/85 text-slate-300 hover:text-white'}`} title="Layer Manager">☰</button>
+        <button onClick={() => setShowQuad(true)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-slate-950/85 text-cyan-400 shadow-xl backdrop-blur-xl hover:bg-slate-900" title="Quad Synchro View">⊞</button>
+        <button onClick={() => setDualPane((v) => !v)} className={`flex h-9 w-9 items-center justify-center rounded-xl border shadow-xl backdrop-blur-xl transition ${dualPane ? 'border-cyan-500/50 bg-cyan-600/30 text-cyan-200' : 'border-white/10 bg-slate-950/85 text-slate-400 hover:text-white'}`} title="Split Dual View">▦</button>
+        <button onClick={() => setSettingsOpen((v) => !v)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-slate-950/85 text-slate-300 shadow-xl backdrop-blur-xl hover:bg-slate-900 hover:text-white" title="Palettes & Settings">⚙</button>
+        <button onClick={() => setShowAssistant(true)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-500/40 bg-violet-600/20 text-violet-300 shadow-xl backdrop-blur-xl hover:bg-violet-600/30" title="AI Meteorologist Copilot">🤖</button>
+      </div>
+
+      <LayerManagerPanel open={showLayerManager} onClose={() => setShowLayerManager(false)} state={{ showRadarPills, showLightning, showMetars, showLSR, showWatches, showWarnings: true }} onChange={(patch) => {
+        if (typeof patch.showRadarPills === 'boolean') setShowRadarPills(patch.showRadarPills);
+        if (typeof patch.showLightning === 'boolean') setShowLightning(patch.showLightning);
+        if (typeof patch.showMetars === 'boolean') setShowMetars(patch.showMetars);
+        if (typeof patch.showLSR === 'boolean') setShowLSR(patch.showLSR);
+        if (typeof patch.showWatches === 'boolean') setShowWatches(patch.showWatches);
+      }} />
+
+      <footer className="pointer-events-none absolute bottom-9 left-0 right-0 z-20 flex justify-center px-4">
+        <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/15 bg-slate-950/90 px-4 py-2 shadow-2xl backdrop-blur-2xl">
+          <button onClick={() => stepFrame(-1)} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 hover:bg-white/10">‹</button>
+          <button onClick={() => setIsPlaying((p) => !p)} disabled={frames.length < 2} className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-600 text-white shadow-lg transition hover:bg-cyan-500 disabled:opacity-40">{isPlaying ? '❚❚' : '▶'}</button>
+          <button onClick={() => stepFrame(1)} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 hover:bg-white/10">›</button>
+          <div className="flex items-center gap-2 px-1"><input type="range" min={0} max={Math.max(0, frames.length - 1)} value={frameIndex} onChange={(e) => { setIsPlaying(false); setFrameIndex(Number(e.target.value)); }} className="w-32 sm:w-48 accent-cyan-400 cursor-pointer" /></div>
+          <span className="font-mono text-xs font-bold text-slate-200 min-w-[84px] text-center" title={frameMeta?.loopAvailable === false ? 'Historical loop may be limited for this source' : 'Playback position'}>{loopLoading ? '...' : `${currentFrame?.label || 'LIVE'}${frames.length ? ` · ${frameIndex + 1}/${frames.length}` : ''}`}</span>
+          <button onClick={goToLive} className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider transition ${currentFrame?.label === 'LIVE' ? 'bg-emerald-500 text-slate-950 shadow-[0_0_8px_#10b981]' : 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'}`}>LIVE</button>
+        </div>
+      </footer>
+
+      <aside aria-label="Reflectivity legend" className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 flex h-6 items-center justify-between border-t border-white/10 bg-slate-950/90 px-4 text-[9px] font-mono backdrop-blur-md">
+        <span className="font-bold text-slate-400">{product === 'maxref' ? `MAX REF (${Math.min(maxRefWindow, frames.length || maxRefWindow)} scans):` : product === 'mesh' ? 'HAIL (in):' : product === 'azshear' ? 'ROTATION:' : 'dBZ:'}</span>
+        <div className="mx-3 flex-1 h-2 rounded-full overflow-hidden flex border border-white/10">
+          <div className="flex-1 bg-[#04e9e7]" /><div className="flex-1 bg-[#019ff4]" /><div className="flex-1 bg-[#0300f4]" /><div className="flex-1 bg-[#02fd02]" /><div className="flex-1 bg-[#01c501]" /><div className="flex-1 bg-[#008e00]" /><div className="flex-1 bg-[#fdf802]" /><div className="flex-1 bg-[#e5bc00]" /><div className="flex-1 bg-[#fd9500]" /><div className="flex-1 bg-[#fd0000]" /><div className="flex-1 bg-[#d40000]" /><div className="flex-1 bg-[#f800fd]" /><div className="flex-1 bg-[#9854c6]" /><div className="flex-1 bg-[#ffffff]" />
+        </div>
+        <span className="text-slate-400">{product === 'mesh' ? '0.5" • 1.0" • 1.75" • 2.5" • 4.0"+' : product === 'azshear' ? '0.005 • 0.010 • 0.015 • 0.020+ s⁻¹' : '5 • 15 • 30 • 45 • 60 • 70+'}</span>
+      </aside>
+
+      {settingsOpen && (
+        <div className="absolute right-16 top-16 z-30 w-72 rounded-2xl border border-white/15 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-2xl">
+          <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2"><span className="text-xs font-bold uppercase tracking-wider text-white">Palettes &amp; Layers</span><button onClick={() => setSettingsOpen(false)} className="text-slate-400 hover:text-white">✕</button></div>
+          <div className="space-y-3.5 text-xs">
+            <div>
+              <div className="mb-1.5 flex items-center justify-between font-bold text-cyan-300"><span>Radar Color Palettes</span><button onClick={() => { setSettingsOpen(false); setShowPalModal(true); }} className="text-[10px] text-amber-400 underline hover:text-amber-300">+ Load .pal File</button></div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[{ key: 'radarscope', label: 'RadarScope' }, { key: 'nws', label: 'NWS Classic' }, { key: 'cod', label: 'COD Pastels' }, { key: 'smooth', label: 'DG Noah' }, { key: 'couplet', label: 'Couplet' }, ...(palCurve ? [{ key: 'palFile', label: palCurve.name.slice(0, 10) }] : [])].map((p) => (
+                  <button key={p.key} onClick={() => setPalette(p.key as PaletteType)} className={`rounded-lg py-1 px-2 text-left text-[11px] font-bold transition ${palette === p.key ? 'bg-cyan-600 text-white shadow-md' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'}`}>{p.label}</button>
+                ))}
+              </div>
+            </div>
+            <label className="flex items-center justify-between text-slate-300"><span>Show On-Map Radar Pills</span><input type="checkbox" checked={showRadarPills} onChange={(e) => setShowRadarPills(e.target.checked)} className="accent-cyan-500" /></label>
+          </div>
+        </div>
+      )}
+
+      {activeSounding && <SkewTSoundingModal sounding={activeSounding} onClose={() => setActiveSounding(null)} />}
+      {showThreatMatrix && <ThreatMatrixPanel onClose={() => setShowThreatMatrix(false)} />}
+      {showPalModal && <PalColorTableModal onClose={() => setShowPalModal(false)} onApplyPal={(parsed) => { setPalCurve(parsed); setPalette('palFile'); }} />}
+      {showPlacefileModal && <PlacefileManagerModal placefiles={placefiles} onClose={() => setShowPlacefileModal(false)} onToggle={handleTogglePlacefile} onAdd={handleAddPlacefile} onDelete={handleDeletePlacefile} />}
+      {showAssistant && (
+        <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/50 p-4 sm:items-center">
+          <div className="h-[75vh] w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl">
+            <WeatherAssistant context={{ site: radarSite, product: productInfo?.label, alerts: [] }} onClose={() => setShowAssistant(false)} />
+          </div>
+        </div>
+      )}
+      {showQuad && <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowQuad(false)} />}
+      {spotterCoords && <SpotterReportModal currentCoords={spotterCoords} onClose={() => setSpotterCoords(null)} onSubmit={handleSpotterSubmit} />}
+      <EmergencyAlertTone />
+    </div>
+  );
+}
