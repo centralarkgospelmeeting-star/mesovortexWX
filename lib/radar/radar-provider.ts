@@ -85,10 +85,9 @@ class NoaaWsR88DDriver implements RadarDriver {
       return `${this.baseUrl}/nexrad-n0q-900913/{z}/{x}/{y}.png`;
     }
 
-    const code = this.mapProductCode(req.product, req.station.network);
-    if (!code) {
-      // Keep a valid reflectivity tile instead of an error image
-      return this.getTileUrl({ ...req, product: 'ref' });
+        const id = req.station.network === 'tdwr' ? req.station.id : req.station.callsign;
+    return `${this.baseUrl}/ridge::${id}-${code}-0/{z}/{x}/{y}.png`;
+  }
     }
 
     // TDWR layer id is TDFW / TORD, not the 3-letter airport code
@@ -99,38 +98,28 @@ class NoaaWsR88DDriver implements RadarDriver {
     return `${this.baseUrl}/ridge::${callsign}-${code}-0/{z}/{x}/{y}.png`;
   }
 
-  getFrameLoop(req: RadarTileRequest, count = 12): { time: string; label: string; tileUrl: string }[] {
-    const code = this.mapProductCode(req.product, req.tilt, req.station.network);
+  g  getFrameLoop(req: RadarTileRequest, count = 12): { time: string; label: string; tileUrl: string }[] {
+    const live = this.getTileUrl(req);
     const now = Date.now();
-    const snapped = Math.floor(now / (5 * 60 * 1000)) * (5 * 60 * 1000);
     const frames: { time: string; label: string; tileUrl: string }[] = [];
-    const callsign = req.station.callsign;
 
     for (let i = count; i >= 1; i--) {
-      const ts = snapped - i * 5 * 60 * 1000;
-      const d = new Date(ts);
-      const stamp =
-        `${d.getUTCFullYear()}` +
-        `${String(d.getUTCMonth() + 1).padStart(2, '0')}` +
-        `${String(d.getUTCDate()).padStart(2, '0')}` +
-        `${String(d.getUTCHours()).padStart(2, '0')}` +
-        `${String(d.getUTCMinutes()).padStart(2, '0')}`;
+      const d = new Date(now - i * 5 * 60 * 1000);
       frames.push({
         time: d.toISOString(),
         label: `-${i * 5}m`,
-        tileUrl: `${this.baseUrl}/ridge::${callsign}-${code}-${stamp}/{z}/{x}/{y}.png`,
+        tileUrl: live,
       });
     }
 
     frames.push({
       time: new Date(now).toISOString(),
       label: 'LIVE',
-      tileUrl: this.getTileUrl(req),
+      tileUrl: live,
     });
 
     return frames;
   }
-}
 
 const defaultDriver = new NoaaWsR88DDriver();
 
