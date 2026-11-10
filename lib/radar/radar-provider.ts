@@ -35,15 +35,15 @@ class NoaaWsR88DDriver implements RadarDriver {
   networkType = 'nexrad';
   private baseUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 
-    private mapProductCode(product: string, network: RadarNetwork): string | null {
+  private mapProductCode(product: string, network: RadarNetwork): string | null {
     const p = product.toLowerCase();
     if (network === 'tdwr') {
       if (p === 'vel' || p === 'n0u' || p === 'n0v') return 'TV0';
       if (p === 'ref' || p === 'n0q' || p === 'n0r') return 'TZL';
-      return null; // TDWR has no CC / ZDR on this service
+      return null;
     }
     if (p === 'cc' || p === 'zdr' || p === 'kdp' || p === 'n0c' || p === 'n0x' || p === 'n0k') {
-      return null; // IEM RIDGE does not publish these
+      return null;
     }
     if (p === 'vel' || p === 'n0u') return 'N0U';
     if (p === 'srvel' || p === 'n0s') return 'N0S';
@@ -65,40 +65,14 @@ class NoaaWsR88DDriver implements RadarDriver {
 
     const code = this.mapProductCode(req.product, req.station.network);
     if (!code) {
-      // Keep a valid reflectivity tile instead of an error image
       return this.getTileUrl({ ...req, product: 'ref' });
     }
 
-    // TDWR layer id is TDFW / TORD, not the 3-letter airport code
     const id = req.station.network === 'tdwr' ? req.station.id : req.station.callsign;
     return `${this.baseUrl}/ridge::${id}-${code}-0/{z}/{x}/{y}.png`;
   }
 
-  getTileUrl(req: RadarTileRequest): string {
-    const national =
-      !req.station?.callsign ||
-      req.station.id === 'US' ||
-      req.station.callsign === 'US' ||
-      req.station.callsign.length < 3;
-
-    if (national) {
-      return `${this.baseUrl}/nexrad-n0q-900913/{z}/{x}/{y}.png`;
-    }
-
-        const id = req.station.network === 'tdwr' ? req.station.id : req.station.callsign;
-    return `${this.baseUrl}/ridge::${id}-${code}-0/{z}/{x}/{y}.png`;
-  }
-    }
-
-    // TDWR layer id is TDFW / TORD, not the 3-letter airport code
-    const id = req.station.network === 'tdwr' ? req.station.id : req.station.callsign;
-    return `${this.baseUrl}/ridge::${id}-${code}-0/{z}/{x}/{y}.png`;
-  } code = this.mapProductCode(req.product, req.tilt, req.station.network);
-    const callsign = req.station.callsign;
-    return `${this.baseUrl}/ridge::${callsign}-${code}-0/{z}/{x}/{y}.png`;
-  }
-
-  g  getFrameLoop(req: RadarTileRequest, count = 12): { time: string; label: string; tileUrl: string }[] {
+  getFrameLoop(req: RadarTileRequest, count = 12): { time: string; label: string; tileUrl: string }[] {
     const live = this.getTileUrl(req);
     const now = Date.now();
     const frames: { time: string; label: string; tileUrl: string }[] = [];
@@ -120,6 +94,7 @@ class NoaaWsR88DDriver implements RadarDriver {
 
     return frames;
   }
+}
 
 const defaultDriver = new NoaaWsR88DDriver();
 
@@ -180,8 +155,9 @@ export class RadarSiteRegistry {
   }
 
   private static seedComprehensiveStations() {
-       RADAR_SITES.forEach((s: any) => {
+    RADAR_SITES.forEach((s) => {
       const callsign = s.radarId || s.id.replace(/^[KPT]/, '');
+      const stateMatch = s.name.match(/,\s*([A-Z]{2})\b/);
       this.registerStation({
         id: s.id,
         callsign,
@@ -191,7 +167,7 @@ export class RadarSiteRegistry {
         elevationM: Math.round((s.elevation ?? 0) * 0.3048),
         network: 'nexrad',
         country: 'US',
-        state: s.name.includes(',') ? s.name.split(',').pop()?.trim().slice(0, 2) : undefined,
+        state: stateMatch?.[1],
         isOnline: true,
         supportedProducts: ['ref', 'vel', 'srvel', 'cc', 'zdr', 'kdp'],
         supportedTilts: ['0.5', '0.9', '1.3', '1.8'],
@@ -202,16 +178,16 @@ export class RadarSiteRegistry {
 
   private static registerTdwr() {
     const tdwrList: (Partial<RadarStation> & { elevationM?: number })[] = [
-      { id: 'TADW', callsign: 'ADW', name: 'Andrews AFB TDWR, MD', lat: 38.810, lon: -76.867, elevationM: 105, state: 'MD' },
+      { id: 'TADW', callsign: 'ADW', name: 'Andrews AFB TDWR, MD', lat: 38.81, lon: -76.867, elevationM: 105, state: 'MD' },
       { id: 'TATL', callsign: 'ATL', name: 'Atlanta Hartsfield TDWR, GA', lat: 33.647, lon: -84.262, elevationM: 328, state: 'GA' },
-      { id: 'TBWI', callsign: 'BWI', name: 'Baltimore/Washington TDWR, MD', lat: 39.090, lon: -76.630, elevationM: 91, state: 'MD' },
+      { id: 'TBWI', callsign: 'BWI', name: 'Baltimore/Washington TDWR, MD', lat: 39.09, lon: -76.63, elevationM: 91, state: 'MD' },
       { id: 'TBOS', callsign: 'BOS', name: 'Boston TDWR, MA', lat: 42.158, lon: -70.933, elevationM: 80, state: 'MA' },
       { id: 'TCLT', callsign: 'CLT', name: 'Charlotte Douglas TDWR, NC', lat: 35.361, lon: -80.885, elevationM: 265, state: 'NC' },
       { id: 'TMDW', callsign: 'MDW', name: 'Chicago Midway TDWR, IL', lat: 41.651, lon: -87.729, elevationM: 233, state: 'IL' },
-      { id: 'TORD', callsign: 'ORD', name: 'Chicago O’Hare TDWR, IL', lat: 41.797, lon: -87.858, elevationM: 227, state: 'IL' },
-      { id: 'TLVE', callsign: 'LVE', name: 'Cleveland TDWR, OH', lat: 41.290, lon: -82.008, elevationM: 284, state: 'OH' },
+      { id: 'TORD', callsign: 'ORD', name: "Chicago O'Hare TDWR, IL", lat: 41.797, lon: -87.858, elevationM: 227, state: 'IL' },
+      { id: 'TLVE', callsign: 'LVE', name: 'Cleveland TDWR, OH', lat: 41.29, lon: -82.008, elevationM: 284, state: 'OH' },
       { id: 'TCMH', callsign: 'CMH', name: 'Columbus TDWR, OH', lat: 40.006, lon: -82.715, elevationM: 350, state: 'OH' },
-      { id: 'TCVG', callsign: 'CVG', name: 'Covington/Cincinnati TDWR, KY', lat: 38.898, lon: -84.580, elevationM: 321, state: 'KY' },
+      { id: 'TCVG', callsign: 'CVG', name: 'Covington/Cincinnati TDWR, KY', lat: 38.898, lon: -84.58, elevationM: 321, state: 'KY' },
       { id: 'TDAL', callsign: 'DAL', name: 'Dallas Love Field TDWR, TX', lat: 32.926, lon: -96.968, elevationM: 190, state: 'TX' },
       { id: 'TDFW', callsign: 'DFW', name: 'Dallas/Fort Worth TDWR, TX', lat: 33.065, lon: -96.918, elevationM: 178, state: 'TX' },
       { id: 'TDAY', callsign: 'DAY', name: 'Dayton TDWR, OH', lat: 40.022, lon: -84.123, elevationM: 311, state: 'OH' },
@@ -229,21 +205,21 @@ export class RadarSiteRegistry {
       { id: 'TMIA', callsign: 'MIA', name: 'Miami International TDWR, FL', lat: 25.758, lon: -80.491, elevationM: 38, state: 'FL' },
       { id: 'TMKE', callsign: 'MKE', name: 'Milwaukee TDWR, WI', lat: 42.819, lon: -88.047, elevationM: 284, state: 'WI' },
       { id: 'TMSP', callsign: 'MSP', name: 'Minneapolis TDWR, MN', lat: 44.871, lon: -92.933, elevationM: 342, state: 'MN' },
-      { id: 'TBNA', callsign: 'BNA', name: 'Nashville International TDWR, TN', lat: 35.980, lon: -86.662, elevationM: 249, state: 'TN' },
+      { id: 'TBNA', callsign: 'BNA', name: 'Nashville International TDWR, TN', lat: 35.98, lon: -86.662, elevationM: 249, state: 'TN' },
       { id: 'TMSY', callsign: 'MSY', name: 'New Orleans TDWR, LA', lat: 30.022, lon: -90.403, elevationM: 30, state: 'LA' },
-      { id: 'TJFK', callsign: 'JFK', name: 'New York JFK TDWR, NY', lat: 40.589, lon: -73.880, elevationM: 34, state: 'NY' },
-      { id: 'TEWR', callsign: 'EWR', name: 'Newark Liberty TDWR, NJ', lat: 40.593, lon: -74.270, elevationM: 41, state: 'NJ' },
-      { id: 'TOKC', callsign: 'OKC', name: 'Oklahoma City TDWR, OK', lat: 35.276, lon: -97.510, elevationM: 399, state: 'OK' },
+      { id: 'TJFK', callsign: 'JFK', name: 'New York JFK TDWR, NY', lat: 40.589, lon: -73.88, elevationM: 34, state: 'NY' },
+      { id: 'TEWR', callsign: 'EWR', name: 'Newark Liberty TDWR, NJ', lat: 40.593, lon: -74.27, elevationM: 41, state: 'NJ' },
+      { id: 'TOKC', callsign: 'OKC', name: 'Oklahoma City TDWR, OK', lat: 35.276, lon: -97.51, elevationM: 399, state: 'OK' },
       { id: 'TMCO', callsign: 'MCO', name: 'Orlando International TDWR, FL', lat: 28.343, lon: -81.326, elevationM: 52, state: 'FL' },
-      { id: 'TPHL', callsign: 'PHL', name: 'Philadelphia TDWR, PA', lat: 39.949, lon: -75.070, elevationM: 47, state: 'PA' },
-      { id: 'TPHX', callsign: 'PHX', name: 'Phoenix Sky Harbor TDWR, AZ', lat: 33.420, lon: -112.163, elevationM: 332, state: 'AZ' },
+      { id: 'TPHL', callsign: 'PHL', name: 'Philadelphia TDWR, PA', lat: 39.949, lon: -75.07, elevationM: 47, state: 'PA' },
+      { id: 'TPHX', callsign: 'PHX', name: 'Phoenix Sky Harbor TDWR, AZ', lat: 33.42, lon: -112.163, elevationM: 332, state: 'AZ' },
       { id: 'TPIT', callsign: 'PIT', name: 'Pittsburgh TDWR, PA', lat: 40.501, lon: -80.486, elevationM: 422, state: 'PA' },
       { id: 'TRDU', callsign: 'RDU', name: 'Raleigh-Durham TDWR, NC', lat: 36.002, lon: -78.697, elevationM: 157, state: 'NC' },
-      { id: 'TSLC', callsign: 'SLC', name: 'Salt Lake City TDWR, UT', lat: 40.967, lon: -111.930, elevationM: 1309, state: 'UT' },
+      { id: 'TSLC', callsign: 'SLC', name: 'Salt Lake City TDWR, UT', lat: 40.967, lon: -111.93, elevationM: 1309, state: 'UT' },
       { id: 'TSJU', callsign: 'SJU', name: 'San Juan TDWR, PR', lat: 18.474, lon: -66.179, elevationM: 48, state: 'PR' },
       { id: 'TSTL', callsign: 'STL', name: 'St. Louis Lambert TDWR, MO', lat: 38.806, lon: -90.489, elevationM: 197, state: 'MO' },
-      { id: 'TTPA', callsign: 'TPA', name: 'Tampa Bay TDWR, FL', lat: 27.860, lon: -82.518, elevationM: 28, state: 'FL' },
-      { id: 'TTUL', callsign: 'TUL', name: 'Tulsa TDWR, OK', lat: 36.070, lon: -95.826, elevationM: 251, state: 'OK' },
+      { id: 'TTPA', callsign: 'TPA', name: 'Tampa Bay TDWR, FL', lat: 27.86, lon: -82.518, elevationM: 28, state: 'FL' },
+      { id: 'TTUL', callsign: 'TUL', name: 'Tulsa TDWR, OK', lat: 36.07, lon: -95.826, elevationM: 251, state: 'OK' },
       { id: 'TDCA', callsign: 'DCA', name: 'Washington National TDWR, MD', lat: 38.759, lon: -76.962, elevationM: 105, state: 'MD' },
       { id: 'TICH', callsign: 'ICH', name: 'Wichita TDWR, KS', lat: 37.507, lon: -97.437, elevationM: 412, state: 'KS' },
     ];
