@@ -176,17 +176,6 @@ export const RADAR_SITES = [
   { id: 'KHDC', radarId: 'HDC', name: 'Hammond, LA', lat: 30.5193, lon: -90.4074, elevation: 43 },
   { id: 'PGUA', radarId: 'GUA', name: 'Andersen AFB, Guam', lat: 13.4558, lon: 144.8111, elevation: 386 },
 ] as const;
-/** Haversine distance in km */
-export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
 
 /** Haversine distance in km */
 export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
