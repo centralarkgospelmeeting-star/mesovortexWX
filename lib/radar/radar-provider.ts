@@ -148,40 +148,29 @@ export class RadarSiteRegistry {
     return list;
   }
 
-  private static registerCoreNexrad() {
-    const nexrad: (Partial<RadarStation> & { elevationM?: number })[] = [
-      { id: 'KLZK', callsign: 'LZK', name: 'Little Rock, AR', lat: 34.836, lon: -92.262, elevationM: 174, state: 'AR' },
-      { id: 'KSRX', callsign: 'SRX', name: 'Fort Smith, AR', lat: 35.290, lon: -94.362, elevationM: 195, state: 'AR' },
-      { id: 'KNQA', callsign: 'NQA', name: 'Memphis, TN', lat: 35.345, lon: -89.873, elevationM: 85, state: 'TN' },
-      { id: 'KTLX', callsign: 'TLX', name: 'Oklahoma City / Norman, OK', lat: 35.333, lon: -97.278, elevationM: 370, state: 'OK' },
-      { id: 'KFWS', callsign: 'FWS', name: 'Dallas / Fort Worth, TX', lat: 32.573, lon: -97.303, elevationM: 208, state: 'TX' },
-      { id: 'KAMA', callsign: 'AMA', name: 'Amarillo, TX', lat: 35.233, lon: -101.709, elevationM: 1093, state: 'TX' },
-      { id: 'KICT', callsign: 'ICT', name: 'Wichita, KS', lat: 37.654, lon: -97.443, elevationM: 406, state: 'KS' },
-      { id: 'KEAX', callsign: 'EAX', name: 'Kansas City, MO', lat: 38.810, lon: -94.264, elevationM: 303, state: 'MO' },
-      { id: 'KLSX', callsign: 'LSX', name: 'St. Louis, MO', lat: 38.699, lon: -90.683, elevationM: 185, state: 'MO' },
-      { id: 'KIND', callsign: 'IND', name: 'Indianapolis, IN', lat: 39.708, lon: -86.280, elevationM: 241, state: 'IN' },
-      { id: 'KLOT', callsign: 'LOT', name: 'Chicago, IL', lat: 41.604, lon: -88.085, elevationM: 202, state: 'IL' },
-      { id: 'KFFC', callsign: 'FFC', name: 'Atlanta, GA', lat: 33.363, lon: -84.566, elevationM: 264, state: 'GA' },
-      { id: 'KBMX', callsign: 'BMX', name: 'Birmingham, AL', lat: 33.172, lon: -86.770, elevationM: 197, state: 'AL' },
-      { id: 'KTBW', callsign: 'TBW', name: 'Tampa Bay, FL', lat: 27.705, lon: -82.402, elevationM: 12, state: 'FL' },
-      { id: 'KAMX', callsign: 'AMX', name: 'Miami, FL', lat: 25.611, lon: -80.413, elevationM: 4, state: 'FL' },
-      { id: 'KLWX', callsign: 'LWX', name: 'Sterling, VA (DC area)', lat: 38.975, lon: -77.487, elevationM: 95, state: 'VA' },
-      { id: 'KOKX', callsign: 'OKX', name: 'New York City, NY', lat: 40.866, lon: -72.864, elevationM: 26, state: 'NY' },
-      { id: 'KBOX', callsign: 'BOX', name: 'Boston, MA', lat: 41.956, lon: -71.137, elevationM: 36, state: 'MA' },
-      { id: 'KDTX', callsign: 'DTX', name: 'Detroit, MI', lat: 42.700, lon: -83.472, elevationM: 328, state: 'MI' },
-      { id: 'KMPX', callsign: 'MPX', name: 'Minneapolis, MN', lat: 44.849, lon: -93.565, elevationM: 288, state: 'MN' },
-      { id: 'KFTG', callsign: 'FTG', name: 'Denver / Boulder, CO', lat: 39.786, lon: -104.546, elevationM: 1673, state: 'CO' },
-      { id: 'KIWA', callsign: 'IWA', name: 'Phoenix, AZ', lat: 33.289, lon: -111.670, elevationM: 412, state: 'AZ' },
-      { id: 'KNKX', callsign: 'NKX', name: 'San Diego, CA', lat: 32.919, lon: -117.042, elevationM: 291, state: 'CA' },
-      { id: 'KATX', callsign: 'ATX', name: 'Seattle / Tacoma, WA', lat: 48.195, lon: -122.496, elevationM: 152, state: 'WA' },
-      { id: 'KHGX', callsign: 'HGX', name: 'Houston / Galveston, TX', lat: 29.472, lon: -95.079, elevationM: 5, state: 'TX' },
-      { id: 'KSHV', callsign: 'SHV', name: 'Shreveport, LA', lat: 32.451, lon: -93.841, elevationM: 83, state: 'LA' },
-      { id: 'KLIX', callsign: 'LIX', name: 'New Orleans, LA', lat: 30.337, lon: -89.826, elevationM: 7, state: 'LA' },
-      { id: 'KOHX', callsign: 'OHX', name: 'Nashville, TN', lat: 36.247, lon: -86.563, elevationM: 173, state: 'TN' },
-      { id: 'KRAX', callsign: 'RAX', name: 'Raleigh / Durham, NC', lat: 35.665, lon: -78.490, elevationM: 106, state: 'NC' },
-      { id: 'KPBZ', callsign: 'PBZ', name: 'Pittsburgh, PA', lat: 40.532, lon: -80.218, elevationM: 360, state: 'PA' },
-    ];
+   private static seedComprehensiveStations() {
+    // 1. FULL national WSR-88D fleet from radar-config (all states + AK/HI/PR/Guam)
+    RADAR_SITES.forEach((s) => {
+      // Skip pure research duplicate if we register research separately
+      const callsign = s.radarId || s.id.replace(/^[KPT]/, '');
+      this.registerStation({
+        id: s.id,
+        callsign,
+        name: s.name,
+        lat: s.lat,
+        lon: s.lon,
+        elevationM: Math.round((s.elevation ?? 0) * 0.3048), // feet → meters if elev is feet
+        network: 'wsr88d',
+        country: 'US',
+        state: s.name.includes(',') ? s.name.split(',').pop()?.trim().slice(0, 2) : undefined,
+        isOnline: true,
+        supportedProducts: ['ref', 'vel', 'srvel', 'cc', 'zdr', 'kdp'],
+        supportedTilts: ['0.5', '0.9', '1.3', '1.8'],
+        vcpMode: 'VCP 212 Convective',
+      });
+    });
 
+    // 2. FAA TDWR (45 sites) — keep your existing tdwrList.forEach here
     nexrad.forEach((s) => {
       this.registerStation({
         id: s.id!,
