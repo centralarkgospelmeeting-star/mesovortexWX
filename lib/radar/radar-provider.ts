@@ -96,20 +96,34 @@ export class RadarSiteRegistry {
   private static stations = new Map<string, RadarStation>();
   private static initialized = false;
 
-  private static ensureInit() {
+   private static ensureInit() {
     if (this.initialized) return;
     this.initialized = true;
-    this.registerCoreNexrad();
+    this.seedComprehensiveStations();
     this.registerTdwr();
   }
 
-  static registerStation(station: RadarStation) {
-    this.stations.set(station.id.toUpperCase(), station);
-    if (station.callsign) {
-      this.stations.set(station.callsign.toUpperCase(), station);
-    }
+    private static registerCoreNexrad() {
+    RADAR_SITES.forEach((s) => {
+      const callsign = s.radarId || s.id.replace(/^[KPT]/, '');
+      const stateMatch = s.name.match(/,\s*([A-Z]{2})\b/);
+      this.registerStation({
+        id: s.id,
+        callsign,
+        name: s.name,
+        lat: s.lat,
+        lon: s.lon,
+        elevationM: Math.round((s.elevation ?? 0) * 0.3048),
+        network: 'nexrad',
+        country: 'US',
+        state: stateMatch?.[1],
+        isOnline: true,
+        supportedProducts: ['ref', 'vel', 'srvel', 'cc', 'zdr', 'kdp'],
+        supportedTilts: ['0.5', '0.9', '1.3', '1.8'],
+        vcpMode: 'VCP 212 Convective',
+      });
+    });
   }
-
   static getStation(id: string): RadarStation {
     this.ensureInit();
     const key = id.toUpperCase();
@@ -148,7 +162,7 @@ export class RadarSiteRegistry {
     return list;
   }
 
-   private static seedComprehensiveStations() {
+   private static () {
     // 1. FULL national WSR-88D fleet from radar-config (all states + AK/HI/PR/Guam)
     RADAR_SITES.forEach((s) => {
       // Skip pure research duplicate if we register research separately
