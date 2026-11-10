@@ -1,4 +1,4 @@
-export const WORKSPACE_SCHEMA_VERSION = 1;
+export const WORKSPACE_SCHEMA_VERSION = 2;
 
 export type WorkspaceLayerPrefs = {
   showRadarPills: boolean;
@@ -6,10 +6,14 @@ export type WorkspaceLayerPrefs = {
   showMetars: boolean;
   showLSR: boolean;
   showWatches: boolean;
+  showWarnings: boolean;
+  showSatellite: boolean;
+  showMping: boolean;
+  showSpotterReports: boolean;
 };
 
 export type WorkspacePrefsV1 = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   radarSite: string;
   product: string;
   tilt: string;
@@ -18,10 +22,12 @@ export type WorkspacePrefsV1 = {
   fastScan: boolean;
   dualPane: boolean;
   layers: WorkspaceLayerPrefs;
+  favorites?: string[];
+  mapCenter?: { lat: number; lon: number; zoom: number };
 };
 
 export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefsV1 = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   radarSite: 'KLZK',
   product: 'ref',
   tilt: '0.5',
@@ -35,5 +41,11 @@ export const DEFAULT_WORKSPACE_PREFS: WorkspacePrefsV1 = {
     showMetars: false,
     showLSR: true,
     showWatches: true,
+    showWarnings: true,
+    showSatellite: false,
+    showMping: false,
+    showSpotterReports: false,
   },
+  favorites: ['KLZK', 'KSRX', 'KNQA'],
+  mapCenter: undefined,
 };
