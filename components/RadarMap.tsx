@@ -8,7 +8,20 @@ import { RadarSiteRegistry, RadarStation, RadarNetworkType } from '../lib/radar/
 
 export type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
 export type BasemapType = 'satellite-streets' | 'custom-weather';
+export type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
+export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
 
+export type SpotterPin = {
+  id: string;
+  hazardType: string;
+  description: string;
+  hailSize?: string;
+  lat: number;
+  lon: number;
+  timestamp: string;
+  callsign: string;
+};
+export type BasemapType = 'satellite-streets' | 'custom-weather';
 interface RadarMapProps {
   product?: string;
   radarSite?: string;
