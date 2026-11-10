@@ -8,8 +8,7 @@ import { RADAR_SITES } from '../lib/radar-config';
 
 export type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
 
-// Exports both BasemapType and BasemapId to support both names across all files
-export type BasemapId = 'custom-weather' | 'satellite-streets' | 'mapbox' | 'satellite';
+export type BasemapId = 'satellite-streets' | 'custom-weather' | 'mapbox' | 'satellite';
 export type BasemapType = BasemapId;
 
 export interface RadarMapProps {
@@ -48,8 +47,9 @@ const SPC_FILL_ID = 'mv-spc-fill';
 const SPC_LINE_ID = 'mv-spc-line';
 
 function buildMapboxRasterStyle(basemap: BasemapType): StyleSpecification {
-  const isSatellite = basemap === 'satellite' || basemap === 'satellite-streets';
-  const stylePath = isSatellite ? SATELLITE_STREETS_ID : CUSTOM_STYLE_ID;
+  // SATELLITE IS DEFAULT: Loads mapbox/satellite-streets-v12
+  const isCustom = basemap === 'custom-weather' || basemap === 'mapbox';
+  const stylePath = isCustom ? CUSTOM_STYLE_ID : SATELLITE_STREETS_ID;
   const tileUrl = `https://api.mapbox.com/styles/v1/${stylePath}/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`;
 
   return {
@@ -76,7 +76,7 @@ export function RadarMap({
   product = 'ref',
   radarSite = 'KLZK',
   mode = 'Radar',
-  basemap = 'custom-weather',
+  basemap = 'satellite-streets', // DEFAULT: Satellite
   tilt = '0.5',
   spcDay = 'Day 1',
   onSelectSite,
@@ -322,7 +322,7 @@ export function RadarMap({
 
     map.on('error', (e) => {
       if (e.error && (basemap === 'custom-weather' || basemap === 'mapbox') && onStyleLoadFailed) {
-        console.error('[Mapbox Style Verification Failed] Falling back to Satellite Streets:', e.error);
+        console.error('[Mapbox Style Warning] Falling back:', e.error);
         onStyleLoadFailed('satellite-streets');
       }
     });
