@@ -1,315 +1,270 @@
-'use client';
+// lib/radar/radar-provider.ts
+// Complete radar site registry + drivers for NEXRAD + TDWR
 
-import { useState, useEffect } from 'react';
-import Image from 'next/image';
-import { RadarMap, BasemapType, ModeTab } from '../components/RadarMap';
-import { WeatherWiseRadarCard } from '../components/WeatherWiseRadarCard';
-import { WeatherWiseAlertsPanel, WeatherAlertItem } from '../components/WeatherWiseAlertsPanel';
-import { RadarSiteRegistry, RadarNetworkType, RadarStation } from '../lib/radar/radar-provider';
+export type RadarNetwork = 'nexrad' | 'tdwr' | 'mrms' | 'research' | 'private' | 'mobile' | 'spotter';
+export type RadarNetworkType = RadarNetwork;
 
-type RadarProduct = 'ref' | 'ref_x' | 'max_ref' | 'vel' | 'cc' | 'zdr';
-type SpcDay = 'Day 1' | 'Day 2' | 'Day 3';
+export type RadarStation = {
+  id: string;
+  callsign: string;
+  name: string;
+  lat: number;
+  lon: number;
+  elevationM: number;
+  network: RadarNetwork;
+  country: string;
+  state?: string;
+  isOnline: boolean;
+  supportedProducts: string[];
+  supportedTilts: string[];
+  vcpMode?: string;
+};
 
-const BASEMAP_STORAGE_KEY = 'mesovortex_basemap_preference';
+export type RadarTileRequest = {
+  station: RadarStation;
+  product: string;
+  tilt: string;
+};
 
-export default function MesoVortexWorkstation() {
-  const [tab, setTab] = useState<ModeTab>('Radar');
-  const [spcDay, setSpcDay] = useState<SpcDay>('Day 1');
-  const [product, setProduct] = useState<RadarProduct>('ref');
-  const [tilt, setTilt] = useState('0.5');
-  const [radarSite, setRadarSite] = useState('US');
-  const [selectedNetwork, setSelectedNetwork] = useState<RadarNetworkType | undefined>(undefined);
-  const [isPlaying, setIsPlaying] = useState(false);
+export interface RadarDriver {
+  networkType: string;
+  getTileUrl(req: RadarTileRequest): string;
+  getFrameLoop(req: RadarTileRequest, count?: number): { time: string; label: string; tileUrl: string }[];
+}
 
-  // Basemap state
-  const [basemap, setBasemap] = useState<BasemapType>('satellite-streets');
-  const [basemapStatus, setBasemapStatus] = useState<string>('Satellite Streets (Default)');
+class NoaaWsR88DDriver implements RadarDriver {
+  networkType = 'nexrad';
+  private baseUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 
-  // Panels
-  const [alertsOpen, setAlertsOpen] = useState(false);
-  const [liveAlerts, setLiveAlerts] = useState<WeatherAlertItem[]>([]);
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  // Dynamic Station Resolution across any network
-  const currentStation: RadarStation = RadarSiteRegistry.getStation(radarSite);
-  const allStations = RadarSiteRegistry.getAllStations(selectedNetwork);
-
-  // Load saved basemap preference
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(BASEMAP_STORAGE_KEY) as BasemapType | null;
-      if (saved === 'satellite-streets' || saved === 'custom-weather') {
-        setBasemap(saved);
-        setBasemapStatus(saved === 'satellite-streets' ? 'Satellite Streets (Default)' : 'Custom Weather');
-      }
-    } catch {
-      // fallback
+  private mapProductCode(product: string, tilt: string, network: RadarNetwork): string {
+    const p = product.toLowerCase();
+    if (network === 'tdwr') {
+      if (p === 'ref' || p === 'n0q' || p === 'n0r') return 'N0Q';
+      if (p === 'vel' || p === 'n0u' || p === 'n0v') return 'N0U';
+      return 'N0Q';
     }
-  }, []);
+    if (p === 'ref' || p === 'n0q') return 'N0Q';
+    if (p === 'vel' || p === 'n0u') return 'N0U';
+    if (p === 'srvel' || p === 'n0s') return 'N0S';
+    if (p === 'tops') return 'NET';
+    if (p === 'vil') return 'NVL';
+    return 'N0Q';
+  }
 
-  const handleSelectBasemap = (selected: BasemapType) => {
-    setBasemap(selected);
-    setBasemapStatus(selected === 'satellite-streets' ? 'Satellite Streets (Default)' : 'Custom Weather');
-    try {
-      localStorage.setItem(BASEMAP_STORAGE_KEY, selected);
-    } catch {
-      // fallback
+  getTileUrl(req: RadarTileRequest): string {
+    const code = this.mapProductCode(req.product, req.tilt, req.station.network);
+    const callsign = req.station.callsign;
+    return `${this.baseUrl}/ridge::${callsign}-${code}-0/{z}/{x}/{y}.png`;
+  }
+
+  getFrameLoop(req: RadarTileRequest, count = 12): { time: string; label: string; tileUrl: string }[] {
+    const code = this.mapProductCode(req.product, req.tilt, req.station.network);
+    const now = Date.now();
+    const snapped = Math.floor(now / (5 * 60 * 1000)) * (5 * 60 * 1000);
+    const frames: { time: string; label: string; tileUrl: string }[] = [];
+    const callsign = req.station.callsign;
+
+    for (let i = count; i >= 1; i--) {
+      const ts = snapped - i * 5 * 60 * 1000;
+      const d = new Date(ts);
+      const stamp =
+        `${d.getUTCFullYear()}` +
+        `${String(d.getUTCMonth() + 1).padStart(2, '0')}` +
+        `${String(d.getUTCDate()).padStart(2, '0')}` +
+        `${String(d.getUTCHours()).padStart(2, '0')}` +
+        `${String(d.getUTCMinutes()).padStart(2, '0')}`;
+      frames.push({
+        time: d.toISOString(),
+        label: `-${i * 5}m`,
+        tileUrl: `${this.baseUrl}/ridge::${callsign}-${code}-${stamp}/{z}/{x}/{y}.png`,
+      });
     }
-  };
 
-  // Fetch real-time NWS Alerts
-  useEffect(() => {
-    fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert')
-      .then((res) => res.json())
-      .then((data) => {
-        const items = (data.features || []).map((f: any, i: number) => ({
-          id: f.id || `alert-${i}`,
-          event: f.properties?.event || 'Severe Warning',
-          headline: f.properties?.headline || f.properties?.description?.slice(0, 75) || 'Severe Weather Warning',
-          severity: f.properties?.severity || 'Immediate',
-          areaDesc: f.properties?.areaDesc || '',
-          population: `${Math.round(2 + Math.random() * 8)}K`,
-          state: f.properties?.areaDesc?.split(',').pop()?.trim() || 'US',
-          wfo: currentStation.callsign,
-          expiresMin: Math.round(15 + Math.random() * 45),
-        }));
-        setLiveAlerts(items);
-      })
-      .catch((err) => console.warn('[Alerts Fetch Error]:', err));
-  }, [currentStation.callsign]);
+    frames.push({
+      time: new Date(now).toISOString(),
+      label: 'LIVE',
+      tileUrl: this.getTileUrl(req),
+    });
 
-  return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[#070c14] select-none font-sans">
-      
-      {/* 1. TOP EDGE RAINBOW THREAT SCALE */}
-      <div className="absolute top-0 left-0 right-0 z-40 h-5 flex text-[9px] font-black text-slate-900 shadow-md">
-        <div className="flex-1 bg-[#c1e9c1] flex items-center justify-center">General Risk</div>
-        <div className="flex-1 bg-[#7fc57f] flex items-center justify-center">Marginal Risk</div>
-        <div className="flex-1 bg-[#f6f67d] flex items-center justify-center">Slight Risk</div>
-        <div className="flex-1 bg-[#edbf69] flex items-center justify-center">Enhanced Risk</div>
-        <div className="flex-1 bg-[#e56d6d] flex items-center justify-center text-white">Moderate Risk</div>
-        <div className="flex-1 bg-[#ff66ff] flex items-center justify-center text-white">High Risk</div>
-      </div>
+    return frames;
+  }
+}
 
-      {/* 2. TOP WEATHERWISE NAVIGATION BAR */}
-      <div className="pointer-events-none absolute top-7 left-0 right-0 z-40 flex items-center justify-between px-4">
-        {/* Left Action Menu & Radar Network Selector */}
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <button
-            onClick={() => setMenuOpen((v) => !v)}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-xl hover:bg-amber-300 transition font-black text-lg border border-amber-300 cursor-pointer"
-            title="Radar Directory & Network Filter"
-          >
-            ☰
-          </button>
+const defaultDriver = new NoaaWsR88DDriver();
 
-          {/* Quick Basemap Toggle */}
-          <div className="flex items-center rounded-full border border-slate-700 bg-slate-950/90 p-0.5 shadow-xl backdrop-blur-md">
-            <button
-              onClick={() => handleSelectBasemap('satellite-streets')}
-              className={`rounded-full px-3 py-1 text-xs font-bold transition cursor-pointer ${
-                basemap === 'satellite-streets'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              🛰️ Satellite
-            </button>
-            <button
-              onClick={() => handleSelectBasemap('custom-weather')}
-              className={`rounded-full px-3 py-1 text-xs font-bold transition cursor-pointer ${
-                basemap === 'custom-weather'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              🎨 Custom Mapbox
-            </button>
-          </div>
-        </div>
+export class RadarSiteRegistry {
+  private static stations = new Map<string, RadarStation>();
+  private static initialized = false;
 
-        {/* Center Floating White Pill With Logo & Modes */}
-        <div className="pointer-events-auto flex flex-col items-center">
-          <div className="flex items-center gap-2 rounded-full bg-white px-3 py-1 shadow-2xl border border-slate-200">
-            <div
-              onClick={() => setMenuOpen((v) => !v)}
-              className="flex items-center gap-2 pr-2 border-r border-slate-200 font-black text-xs text-slate-900 cursor-pointer hover:opacity-80 transition"
-            >
-              <Image
-                src="/logo.png"
-                alt="MesoVortex Wx"
-                width={26}
-                height={26}
-                className="rounded-full shadow-sm"
-                priority
-              />
-              <span>MesoVortex</span>
-              <span className="text-[10px] text-slate-400">▾</span>
-            </div>
+  private static ensureInit() {
+    if (this.initialized) return;
+    this.initialized = true;
+    this.registerCoreNexrad();
+    this.registerTdwr();
+  }
 
-            <div className="flex items-center gap-1 font-bold text-xs">
-              {(['Radar', 'Composite', 'Satellite', 'Outlooks'] as ModeTab[]).map((modeTab) => (
-                <button
-                  key={modeTab}
-                  onClick={() => setTab(modeTab)}
-                  className={`rounded-full px-3 py-1 transition cursor-pointer flex items-center gap-1 ${
-                    tab === modeTab ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {modeTab === 'Radar' && <span>📡</span>}
-                  {modeTab}
-                </button>
-              ))}
-            </div>
-          </div>
+  static registerStation(station: RadarStation) {
+    this.stations.set(station.id.toUpperCase(), station);
+    if (station.callsign) {
+      this.stations.set(station.callsign.toUpperCase(), station);
+    }
+  }
 
-          {/* Sub-bar for SPC Day Selection */}
-          {tab === 'Outlooks' && (
-            <div className="mt-1.5 flex items-center gap-2 rounded-full bg-white px-3 py-1 shadow-xl border border-slate-200 text-xs font-bold text-slate-700 animate-fade-in">
-              <span className="px-1">Categorical</span>
-              <span className="text-slate-300">|</span>
-              {(['Day 1', 'Day 2', 'Day 3'] as SpcDay[]).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setSpcDay(d)}
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] transition cursor-pointer ${
-                    spcDay === d ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+  static getStation(id: string): RadarStation {
+    this.ensureInit();
+    const key = id.toUpperCase();
+    const station = this.stations.get(key);
+    if (station) return station;
 
-        {/* Top-Right Alerts Counter Badge */}
-        <button
-          onClick={() => setAlertsOpen((v) => !v)}
-          className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-amber-400 hover:bg-amber-300 px-3 py-1.5 text-slate-950 font-black text-xs shadow-xl border border-amber-300 transition cursor-pointer"
-        >
-          <span>⚠️</span>
-          <span>{liveAlerts.length || 188}</span>
-        </button>
-      </div>
+    return {
+      id: key,
+      callsign: key.replace(/^K/, '').slice(0, 3),
+      name: `${key} (unknown)`,
+      lat: 35.0,
+      lon: -97.0,
+      elevationM: 300,
+      network: 'nexrad',
+      country: 'US',
+      isOnline: false,
+      supportedProducts: ['ref', 'vel'],
+      supportedTilts: ['0.5'],
+    };
+  }
 
-      {/* 3. FULL MAP CANVAS (Supports all WSR-88D, TDWR, Mobile, Research, Spotter radials) */}
-      <div className="absolute inset-0">
-        <RadarMap
-          product={product === 'ref_x' || product === 'max_ref' ? 'ref' : product}
-          radarSite={radarSite}
-          mode={tab}
-          basemap={basemap}
-          tilt={tilt}
-          spcDay={spcDay}
-          filterNetwork={selectedNetwork}
-          onSelectSite={(id) => setRadarSite(id)}
-        />
-      </div>
+  static getDriverForStation(station: RadarStation): RadarDriver {
+    return defaultDriver;
+  }
 
-      {/* 4. BOTTOM-LEFT FLOATING RADAR CARD */}
-      <WeatherWiseRadarCard
-        siteId={radarSite === 'US' ? 'US CONUS' : currentStation.id}
-        siteName={radarSite === 'US' ? 'United States Overview' : `${currentStation.name} (${currentStation.network.toUpperCase()})`}
-        product={product}
-        tilt={tilt}
-        isPlaying={isPlaying}
-        onSelectProduct={(p) => setProduct(p)}
-        onSelectTilt={(t) => setTilt(t)}
-        onTogglePlay={() => setIsPlaying((p) => !p)}
-      />
+  static getAllStations(network?: RadarNetwork | RadarNetworkType): RadarStation[] {
+    this.ensureInit();
+    const seen = new Set<string>();
+    const list: RadarStation[] = [];
+    Array.from(this.stations.values()).forEach((s) => {
+      if (seen.has(s.id)) return;
+      if (network && s.network !== network) return;
+      seen.add(s.id);
+      list.push(s);
+    });
+    return list;
+  }
 
-      {/* 5. RIGHT-SIDE CURRENT ALERTS PANEL */}
-      {alertsOpen && (
-        <WeatherWiseAlertsPanel
-          alerts={liveAlerts}
-          onClose={() => setAlertsOpen(false)}
-          onSelectAlert={(alert) => console.log('Inspecting alert:', alert)}
-        />
-      )}
+  private static registerCoreNexrad() {
+    const nexrad: (Partial<RadarStation> & { elevationM?: number })[] = [
+      { id: 'KLZK', callsign: 'LZK', name: 'Little Rock, AR', lat: 34.836, lon: -92.262, elevationM: 174, state: 'AR' },
+      { id: 'KSRX', callsign: 'SRX', name: 'Fort Smith, AR', lat: 35.290, lon: -94.362, elevationM: 195, state: 'AR' },
+      { id: 'KNQA', callsign: 'NQA', name: 'Memphis, TN', lat: 35.345, lon: -89.873, elevationM: 85, state: 'TN' },
+      { id: 'KTLX', callsign: 'TLX', name: 'Oklahoma City / Norman, OK', lat: 35.333, lon: -97.278, elevationM: 370, state: 'OK' },
+      { id: 'KFWS', callsign: 'FWS', name: 'Dallas / Fort Worth, TX', lat: 32.573, lon: -97.303, elevationM: 208, state: 'TX' },
+      { id: 'KAMA', callsign: 'AMA', name: 'Amarillo, TX', lat: 35.233, lon: -101.709, elevationM: 1093, state: 'TX' },
+      { id: 'KICT', callsign: 'ICT', name: 'Wichita, KS', lat: 37.654, lon: -97.443, elevationM: 406, state: 'KS' },
+      { id: 'KEAX', callsign: 'EAX', name: 'Kansas City, MO', lat: 38.810, lon: -94.264, elevationM: 303, state: 'MO' },
+      { id: 'KLSX', callsign: 'LSX', name: 'St. Louis, MO', lat: 38.699, lon: -90.683, elevationM: 185, state: 'MO' },
+      { id: 'KIND', callsign: 'IND', name: 'Indianapolis, IN', lat: 39.708, lon: -86.280, elevationM: 241, state: 'IN' },
+      { id: 'KLOT', callsign: 'LOT', name: 'Chicago, IL', lat: 41.604, lon: -88.085, elevationM: 202, state: 'IL' },
+      { id: 'KFFC', callsign: 'FFC', name: 'Atlanta, GA', lat: 33.363, lon: -84.566, elevationM: 264, state: 'GA' },
+      { id: 'KBMX', callsign: 'BMX', name: 'Birmingham, AL', lat: 33.172, lon: -86.770, elevationM: 197, state: 'AL' },
+      { id: 'KTBW', callsign: 'TBW', name: 'Tampa Bay, FL', lat: 27.705, lon: -82.402, elevationM: 12, state: 'FL' },
+      { id: 'KAMX', callsign: 'AMX', name: 'Miami, FL', lat: 25.611, lon: -80.413, elevationM: 4, state: 'FL' },
+      { id: 'KLWX', callsign: 'LWX', name: 'Sterling, VA (DC area)', lat: 38.975, lon: -77.487, elevationM: 95, state: 'VA' },
+      { id: 'KOKX', callsign: 'OKX', name: 'New York City, NY', lat: 40.866, lon: -72.864, elevationM: 26, state: 'NY' },
+      { id: 'KBOX', callsign: 'BOX', name: 'Boston, MA', lat: 41.956, lon: -71.137, elevationM: 36, state: 'MA' },
+      { id: 'KDTX', callsign: 'DTX', name: 'Detroit, MI', lat: 42.700, lon: -83.472, elevationM: 328, state: 'MI' },
+      { id: 'KMPX', callsign: 'MPX', name: 'Minneapolis, MN', lat: 44.849, lon: -93.565, elevationM: 288, state: 'MN' },
+      { id: 'KFTG', callsign: 'FTG', name: 'Denver / Boulder, CO', lat: 39.786, lon: -104.546, elevationM: 1673, state: 'CO' },
+      { id: 'KIWA', callsign: 'IWA', name: 'Phoenix, AZ', lat: 33.289, lon: -111.670, elevationM: 412, state: 'AZ' },
+      { id: 'KNKX', callsign: 'NKX', name: 'San Diego, CA', lat: 32.919, lon: -117.042, elevationM: 291, state: 'CA' },
+      { id: 'KATX', callsign: 'ATX', name: 'Seattle / Tacoma, WA', lat: 48.195, lon: -122.496, elevationM: 152, state: 'WA' },
+      { id: 'KHGX', callsign: 'HGX', name: 'Houston / Galveston, TX', lat: 29.472, lon: -95.079, elevationM: 5, state: 'TX' },
+      { id: 'KSHV', callsign: 'SHV', name: 'Shreveport, LA', lat: 32.451, lon: -93.841, elevationM: 83, state: 'LA' },
+      { id: 'KLIX', callsign: 'LIX', name: 'New Orleans, LA', lat: 30.337, lon: -89.826, elevationM: 7, state: 'LA' },
+      { id: 'KOHX', callsign: 'OHX', name: 'Nashville, TN', lat: 36.247, lon: -86.563, elevationM: 173, state: 'TN' },
+      { id: 'KRAX', callsign: 'RAX', name: 'Raleigh / Durham, NC', lat: 35.665, lon: -78.490, elevationM: 106, state: 'NC' },
+      { id: 'KPBZ', callsign: 'PBZ', name: 'Pittsburgh, PA', lat: 40.532, lon: -80.218, elevationM: 360, state: 'PA' },
+    ];
 
-      {/* 6. EXPANDED RADAR NETWORK SELECTOR & DIRECTORY MODAL */}
-      {menuOpen && (
-        <div className="fixed inset-0 z-50 flex bg-black/60 backdrop-blur-sm animate-fade-in font-sans">
-          <div className="w-96 bg-white p-5 shadow-2xl space-y-4 text-slate-800 flex flex-col h-full">
-            <div className="flex items-center justify-between border-b pb-3 font-extrabold text-base">
-              <div className="flex items-center gap-2">
-                <Image src="/logo.png" alt="MesoVortex" width={24} height={24} className="rounded-full" />
-                <span>Radar Network Directory</span>
-              </div>
-              <button onClick={() => setMenuOpen(false)}>✕</button>
-            </div>
+    nexrad.forEach((s) => {
+      this.registerStation({
+        id: s.id!,
+        callsign: s.callsign!,
+        name: s.name!,
+        lat: s.lat!,
+        lon: s.lon!,
+        elevationM: s.elevationM ?? 200,
+        network: 'nexrad',
+        country: 'US',
+        state: s.state,
+        isOnline: true,
+        supportedProducts: ['ref', 'vel', 'srvel', 'tops', 'vil'],
+        supportedTilts: ['0.5', '0.9', '1.3', '1.8', '2.4'],
+        vcpMode: 'VCP 12 / 212',
+      });
+    });
+  }
 
-            {/* Network Filters: WSR-88D, TDWR, Mobile, Research */}
-            <div className="flex gap-1 overflow-x-auto pb-1 text-[11px] font-bold">
-              {[
-                { label: 'All', val: undefined },
-                { label: 'WSR-88D', val: 'wsr88d' },
-                { label: 'FAA TDWR', val: 'tdwr' },
-                { label: 'Research', val: 'research' },
-                { label: 'Mobile (DOW)', val: 'mobile' },
-              ].map((btn) => (
-                <button
-                  key={btn.label}
-                  onClick={() => setSelectedNetwork(btn.val as any)}
-                  className={`rounded-lg px-2.5 py-1 whitespace-nowrap transition ${
-                    selectedNetwork === btn.val
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {btn.label}
-                </button>
-              ))}
-            </div>
+  private static registerTdwr() {
+    const tdwrList: (Partial<RadarStation> & { elevationM?: number })[] = [
+      { id: 'TADW', callsign: 'ADW', name: 'Andrews AFB TDWR, MD', lat: 38.810, lon: -76.867, elevationM: 105, state: 'MD' },
+      { id: 'TATL', callsign: 'ATL', name: 'Atlanta Hartsfield TDWR, GA', lat: 33.647, lon: -84.262, elevationM: 328, state: 'GA' },
+      { id: 'TBWI', callsign: 'BWI', name: 'Baltimore/Washington TDWR, MD', lat: 39.090, lon: -76.630, elevationM: 91, state: 'MD' },
+      { id: 'TBOS', callsign: 'BOS', name: 'Boston TDWR, MA', lat: 42.158, lon: -70.933, elevationM: 80, state: 'MA' },
+      { id: 'TCLT', callsign: 'CLT', name: 'Charlotte Douglas TDWR, NC', lat: 35.361, lon: -80.885, elevationM: 265, state: 'NC' },
+      { id: 'TMDW', callsign: 'MDW', name: 'Chicago Midway TDWR, IL', lat: 41.651, lon: -87.729, elevationM: 233, state: 'IL' },
+      { id: 'TORD', callsign: 'ORD', name: 'Chicago O’Hare TDWR, IL', lat: 41.797, lon: -87.858, elevationM: 227, state: 'IL' },
+      { id: 'TLVE', callsign: 'LVE', name: 'Cleveland TDWR, OH', lat: 41.290, lon: -82.008, elevationM: 284, state: 'OH' },
+      { id: 'TCMH', callsign: 'CMH', name: 'Columbus TDWR, OH', lat: 40.006, lon: -82.715, elevationM: 350, state: 'OH' },
+      { id: 'TCVG', callsign: 'CVG', name: 'Covington/Cincinnati TDWR, KY', lat: 38.898, lon: -84.580, elevationM: 321, state: 'KY' },
+      { id: 'TDAL', callsign: 'DAL', name: 'Dallas Love Field TDWR, TX', lat: 32.926, lon: -96.968, elevationM: 190, state: 'TX' },
+      { id: 'TDFW', callsign: 'DFW', name: 'Dallas/Fort Worth TDWR, TX', lat: 33.065, lon: -96.918, elevationM: 178, state: 'TX' },
+      { id: 'TDAY', callsign: 'DAY', name: 'Dayton TDWR, OH', lat: 40.022, lon: -84.123, elevationM: 311, state: 'OH' },
+      { id: 'TDEN', callsign: 'DEN', name: 'Denver International TDWR, CO', lat: 39.727, lon: -104.526, elevationM: 1738, state: 'CO' },
+      { id: 'TDTW', callsign: 'DTW', name: 'Detroit Metro TDWR, MI', lat: 42.111, lon: -83.515, elevationM: 235, state: 'MI' },
+      { id: 'TIAD', callsign: 'IAD', name: 'Dulles International TDWR, VA', lat: 39.084, lon: -77.529, elevationM: 144, state: 'VA' },
+      { id: 'TFLL', callsign: 'FLL', name: 'Fort Lauderdale TDWR, FL', lat: 26.143, lon: -80.344, elevationM: 37, state: 'FL' },
+      { id: 'THOU', callsign: 'HOU', name: 'Houston Hobby TDWR, TX', lat: 29.516, lon: -95.242, elevationM: 36, state: 'TX' },
+      { id: 'TIAH', callsign: 'IAH', name: 'Houston Intercontinental TDWR, TX', lat: 30.065, lon: -95.567, elevationM: 77, state: 'TX' },
+      { id: 'TIDS', callsign: 'IDS', name: 'Indianapolis TDWR, IN', lat: 39.637, lon: -86.436, elevationM: 258, state: 'IN' },
+      { id: 'TMCI', callsign: 'MCI', name: 'Kansas City TDWR, MO', lat: 39.499, lon: -94.742, elevationM: 332, state: 'MO' },
+      { id: 'TLAS', callsign: 'LAS', name: 'Las Vegas TDWR, NV', lat: 36.144, lon: -115.007, elevationM: 627, state: 'NV' },
+      { id: 'TSDF', callsign: 'SDF', name: 'Louisville TDWR, KY', lat: 38.046, lon: -85.611, elevationM: 223, state: 'KY' },
+      { id: 'TMEM', callsign: 'MEM', name: 'Memphis International TDWR, TN', lat: 34.896, lon: -89.993, elevationM: 147, state: 'TN' },
+      { id: 'TMIA', callsign: 'MIA', name: 'Miami International TDWR, FL', lat: 25.758, lon: -80.491, elevationM: 38, state: 'FL' },
+      { id: 'TMKE', callsign: 'MKE', name: 'Milwaukee TDWR, WI', lat: 42.819, lon: -88.047, elevationM: 284, state: 'WI' },
+      { id: 'TMSP', callsign: 'MSP', name: 'Minneapolis TDWR, MN', lat: 44.871, lon: -92.933, elevationM: 342, state: 'MN' },
+      { id: 'TBNA', callsign: 'BNA', name: 'Nashville International TDWR, TN', lat: 35.980, lon: -86.662, elevationM: 249, state: 'TN' },
+      { id: 'TMSY', callsign: 'MSY', name: 'New Orleans TDWR, LA', lat: 30.022, lon: -90.403, elevationM: 30, state: 'LA' },
+      { id: 'TJFK', callsign: 'JFK', name: 'New York JFK TDWR, NY', lat: 40.589, lon: -73.880, elevationM: 34, state: 'NY' },
+      { id: 'TEWR', callsign: 'EWR', name: 'Newark Liberty TDWR, NJ', lat: 40.593, lon: -74.270, elevationM: 41, state: 'NJ' },
+      { id: 'TOKC', callsign: 'OKC', name: 'Oklahoma City TDWR, OK', lat: 35.276, lon: -97.510, elevationM: 399, state: 'OK' },
+      { id: 'TMCO', callsign: 'MCO', name: 'Orlando International TDWR, FL', lat: 28.343, lon: -81.326, elevationM: 52, state: 'FL' },
+      { id: 'TPHL', callsign: 'PHL', name: 'Philadelphia TDWR, PA', lat: 39.949, lon: -75.070, elevationM: 47, state: 'PA' },
+      { id: 'TPHX', callsign: 'PHX', name: 'Phoenix Sky Harbor TDWR, AZ', lat: 33.420, lon: -112.163, elevationM: 332, state: 'AZ' },
+      { id: 'TPIT', callsign: 'PIT', name: 'Pittsburgh TDWR, PA', lat: 40.501, lon: -80.486, elevationM: 422, state: 'PA' },
+      { id: 'TRDU', callsign: 'RDU', name: 'Raleigh-Durham TDWR, NC', lat: 36.002, lon: -78.697, elevationM: 157, state: 'NC' },
+      { id: 'TSLC', callsign: 'SLC', name: 'Salt Lake City TDWR, UT', lat: 40.967, lon: -111.930, elevationM: 1309, state: 'UT' },
+      { id: 'TSJU', callsign: 'SJU', name: 'San Juan TDWR, PR', lat: 18.474, lon: -66.179, elevationM: 48, state: 'PR' },
+      { id: 'TSTL', callsign: 'STL', name: 'St. Louis Lambert TDWR, MO', lat: 38.806, lon: -90.489, elevationM: 197, state: 'MO' },
+      { id: 'TTPA', callsign: 'TPA', name: 'Tampa Bay TDWR, FL', lat: 27.860, lon: -82.518, elevationM: 28, state: 'FL' },
+      { id: 'TTUL', callsign: 'TUL', name: 'Tulsa TDWR, OK', lat: 36.070, lon: -95.826, elevationM: 251, state: 'OK' },
+      { id: 'TDCA', callsign: 'DCA', name: 'Washington National TDWR, MD', lat: 38.759, lon: -76.962, elevationM: 105, state: 'MD' },
+      { id: 'TICH', callsign: 'ICH', name: 'Wichita TDWR, KS', lat: 37.507, lon: -97.437, elevationM: 412, state: 'KS' },
+    ];
 
-            {/* Searchable Station Directory */}
-            <div className="flex-1 overflow-y-auto space-y-1 pr-1 text-xs">
-              <button
-                onClick={() => {
-                  setRadarSite('US');
-                  setMenuOpen(false);
-                }}
-                className="w-full text-left rounded-xl p-2.5 bg-blue-50 hover:bg-blue-100 font-bold text-blue-900 border border-blue-200"
-              >
-                🗺️ Reset View to Entire United States
-              </button>
-
-              {allStations.map((stn) => (
-                <div
-                  key={stn.id}
-                  onClick={() => {
-                    setRadarSite(stn.id);
-                    setMenuOpen(false);
-                  }}
-                  className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition border ${
-                    radarSite === stn.id
-                      ? 'bg-blue-600 text-white font-bold border-blue-600'
-                      : 'hover:bg-slate-100 text-slate-700 border-slate-100'
-                  }`}
-                >
-                  <div>
-                    <div className="font-bold flex items-center gap-1.5">
-                      <span>{stn.id}</span>
-                      <span className="text-[10px] font-mono opacity-70">({stn.callsign})</span>
-                    </div>
-                    <div className="text-[11px] opacity-80 line-clamp-1">{stn.name}</div>
-                  </div>
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-black ${
-                    stn.network === 'tdwr' ? 'bg-purple-100 text-purple-800' :
-                    stn.network === 'mobile' ? 'bg-amber-100 text-amber-800' :
-                    stn.network === 'research' ? 'bg-cyan-100 text-cyan-800' :
-                    'bg-slate-200 text-slate-700'
-                  }`}>
-                    {stn.network}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex-1" onClick={() => setMenuOpen(false)} />
-        </div>
-      )}
-    </div>
-  );
+    tdwrList.forEach((s) => {
+      this.registerStation({
+        id: s.id!,
+        callsign: s.callsign!,
+        name: s.name!,
+        lat: s.lat!,
+        lon: s.lon!,
+        elevationM: s.elevationM ?? 180,
+        network: 'tdwr',
+        country: 'US',
+        state: s.state,
+        isOnline: true,
+        supportedProducts: ['ref', 'vel'],
+        supportedTilts: ['0.2', '0.6', '1.0'],
+        vcpMode: 'VCP 80 High-Res Airport',
+      });
+    });
+  }
 }
