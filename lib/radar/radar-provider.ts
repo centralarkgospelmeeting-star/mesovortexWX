@@ -1,9 +1,7 @@
 // lib/radar/radar-provider.ts
 // Complete radar site registry + drivers for NEXRAD + TDWR
-
 export type RadarNetwork = 'nexrad' | 'tdwr' | 'mrms' | 'research' | 'private' | 'mobile' | 'spotter';
 export type RadarNetworkType = RadarNetwork;
-
 export type RadarStation = {
   id: string;
   callsign: string;
