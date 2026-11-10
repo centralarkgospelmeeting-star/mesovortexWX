@@ -188,6 +188,18 @@ export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/** Haversine distance in km */
+export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 /** Return the nearest NEXRAD sites to a lat/lon. */
 export function findNearestRadar(
   lat: number,
@@ -209,6 +221,7 @@ export function findNearestRadar(
 export function autoSelectNearestRadar(lat: number, lon: number): string {
   const nearest = findNearestRadar(lat, lon, { limit: 1, maxKm: 400 });
   return nearest[0]?.site.id ?? 'KLZK';
+}
 }
 export type { RadarProductKey, RadarProductDef, FrameProvenance } from './product-registry';
 export { RADAR_PRODUCTS, getProductDef } from './product-registry';
