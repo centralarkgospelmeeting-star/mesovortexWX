@@ -172,6 +172,9 @@ export const RADAR_SITES = [
   { id: 'PHWA', radarId: 'HWA', name: 'South Shore, HI', lat: 19.0950, lon: -155.5689, elevation: 1380 },
   { id: 'TJUA', radarId: 'JUA', name: 'San Juan, PR', lat: 18.1156, lon: -66.0781, elevation: 2790 },
 
+  { id: 'KLGX', radarId: 'LGX', name: 'Langley Hill, WA', lat: 47.1169, lon: -124.1067, elevation: 366 },
+  { id: 'KHDC', radarId: 'HDC', name: 'Hammond, LA', lat: 30.5193, lon: -90.4074, elevation: 43 },
+  { id: 'PGUA', radarId: 'GUA', name: 'Andersen AFB, Guam', lat: 13.4558, lon: 144.8111, elevation: 386 },
 ] as const;
 
 export type { RadarProductKey, RadarProductDef, FrameProvenance } from './product-registry';
