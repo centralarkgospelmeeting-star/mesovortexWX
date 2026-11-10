@@ -130,7 +130,11 @@ export class RadarSiteRegistry {
     };
   }
 
-    static getAllStations(network?: RadarNetwork | RadarNetworkType): RadarStation[] {
+  static getDriverForStation(station: RadarStation): RadarDriver {
+    return defaultDriver;
+  }
+
+  static getAllStations(network?: RadarNetwork | RadarNetworkType): RadarStation[] {
     this.ensureInit();
     const seen = new Set<string>();
     const list: RadarStation[] = [];
