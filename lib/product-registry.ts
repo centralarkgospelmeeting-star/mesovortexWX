@@ -19,9 +19,7 @@ export type RadarProductDef = {
   short: string;
   description: string;
   sourceKind: ProductSourceKind;
-  /** When true, current implementation may not reflect the canonical product semantics. */
   substitute: boolean;
-  /** True when historical time-stepped frames are genuinely available from the current source path. */
   loopExpected: boolean;
   sourceNote?: string;
   attribution?: string;
