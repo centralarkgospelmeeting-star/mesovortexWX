@@ -1,8 +1,8 @@
 import { RADAR_SITES } from '../radar-config';
-// lib/radar/radar-provider.ts
-// Complete radar site registry + drivers for NEXRAD + TDWR
+
 export type RadarNetwork = 'nexrad' | 'tdwr' | 'mrms' | 'research' | 'private' | 'mobile' | 'spotter';
 export type RadarNetworkType = RadarNetwork;
+
 export type RadarStation = {
   id: string;
   callsign: string;
@@ -31,7 +31,6 @@ export interface RadarDriver {
   getFrameLoop(req: RadarTileRequest, count?: number): { time: string; label: string; tileUrl: string }[];
 }
 
-/** NOAA / IEM RIDGE-style driver used for both NEXRAD and TDWR */
 class NoaaWsR88DDriver implements RadarDriver {
   networkType = 'nexrad';
   private baseUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
@@ -96,34 +95,20 @@ export class RadarSiteRegistry {
   private static stations = new Map<string, RadarStation>();
   private static initialized = false;
 
-   private static ensureInit() {
+  private static ensureInit() {
     if (this.initialized) return;
     this.initialized = true;
     this.seedComprehensiveStations();
     this.registerTdwr();
   }
 
-    private static registerCoreNexrad() {
-    RADAR_SITES.forEach((s) => {
-      const callsign = s.radarId || s.id.replace(/^[KPT]/, '');
-      const stateMatch = s.name.match(/,\s*([A-Z]{2})\b/);
-      this.registerStation({
-        id: s.id,
-        callsign,
-        name: s.name,
-        lat: s.lat,
-        lon: s.lon,
-        elevationM: Math.round((s.elevation ?? 0) * 0.3048),
-        network: 'nexrad',
-        country: 'US',
-        state: stateMatch?.[1],
-        isOnline: true,
-        supportedProducts: ['ref', 'vel', 'srvel', 'cc', 'zdr', 'kdp'],
-        supportedTilts: ['0.5', '0.9', '1.3', '1.8'],
-        vcpMode: 'VCP 212 Convective',
-      });
-    });
+  static registerStation(station: RadarStation) {
+    this.stations.set(station.id.toUpperCase(), station);
+    if (station.callsign) {
+      this.stations.set(station.callsign.toUpperCase(), station);
+    }
   }
+
   static getStation(id: string): RadarStation {
     this.ensureInit();
     const key = id.toUpperCase();
@@ -162,10 +147,8 @@ export class RadarSiteRegistry {
     return list;
   }
 
-   private static () {
-    // 1. FULL national WSR-88D fleet from radar-config (all states + AK/HI/PR/Guam)
+  private static seedComprehensiveStations() {
     RADAR_SITES.forEach((s) => {
-      // Skip pure research duplicate if we register research separately
       const callsign = s.radarId || s.id.replace(/^[KPT]/, '');
       this.registerStation({
         id: s.id,
@@ -173,33 +156,14 @@ export class RadarSiteRegistry {
         name: s.name,
         lat: s.lat,
         lon: s.lon,
-        elevationM: Math.round((s.elevation ?? 0) * 0.3048), // feet → meters if elev is feet
-        network: 'wsr88d',
+        elevationM: Math.round((s.elevation ?? 0) * 0.3048),
+        network: 'nexrad',
         country: 'US',
         state: s.name.includes(',') ? s.name.split(',').pop()?.trim().slice(0, 2) : undefined,
         isOnline: true,
         supportedProducts: ['ref', 'vel', 'srvel', 'cc', 'zdr', 'kdp'],
         supportedTilts: ['0.5', '0.9', '1.3', '1.8'],
         vcpMode: 'VCP 212 Convective',
-      });
-    });
-
-    // 2. FAA TDWR (45 sites) — keep your existing tdwrList.forEach here
-    nexrad.forEach((s) => {
-      this.registerStation({
-        id: s.id!,
-        callsign: s.callsign!,
-        name: s.name!,
-        lat: s.lat!,
-        lon: s.lon!,
-        elevationM: s.elevationM ?? 200,
-        network: 'nexrad',
-        country: 'US',
-        state: s.state,
-        isOnline: true,
-        supportedProducts: ['ref', 'vel', 'srvel', 'tops', 'vil'],
-        supportedTilts: ['0.5', '0.9', '1.3', '1.8', '2.4'],
-        vcpMode: 'VCP 12 / 212',
       });
     });
   }
