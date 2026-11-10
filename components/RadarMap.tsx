@@ -7,17 +7,20 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { RADAR_SITES } from '../lib/radar-config';
 
 export type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
-export type BasemapId = 'custom-weather' | 'satellite-streets';
 
-interface RadarMapProps {
+// Exports both BasemapType and BasemapId to support both names across all files
+export type BasemapId = 'custom-weather' | 'satellite-streets' | 'mapbox' | 'satellite';
+export type BasemapType = BasemapId;
+
+export interface RadarMapProps {
   product?: string;
   radarSite?: string;
   mode?: ModeTab;
-  basemap?: BasemapId;
+  basemap?: BasemapType;
   tilt?: string;
   spcDay?: 'Day 1' | 'Day 2' | 'Day 3';
   onSelectSite?: (siteId: string) => void;
-  onStyleLoadFailed?: (failedBasemap: BasemapId) => void;
+  onStyleLoadFailed?: (failedBasemap: any) => void;
 }
 
 const MAPBOX_TOKEN =
@@ -44,8 +47,9 @@ const SPC_SOURCE_ID = 'mv-spc-source';
 const SPC_FILL_ID = 'mv-spc-fill';
 const SPC_LINE_ID = 'mv-spc-line';
 
-function buildMapboxRasterStyle(basemap: BasemapId): StyleSpecification {
-  const stylePath = basemap === 'satellite-streets' ? SATELLITE_STREETS_ID : CUSTOM_STYLE_ID;
+function buildMapboxRasterStyle(basemap: BasemapType): StyleSpecification {
+  const isSatellite = basemap === 'satellite' || basemap === 'satellite-streets';
+  const stylePath = isSatellite ? SATELLITE_STREETS_ID : CUSTOM_STYLE_ID;
   const tileUrl = `https://api.mapbox.com/styles/v1/${stylePath}/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`;
 
   return {
@@ -316,11 +320,10 @@ export function RadarMap({
 
     mapRef.current = map;
 
-    // Error detection for style load failures -> trigger automatic fallback
     map.on('error', (e) => {
-      if (e.error && basemap === 'custom-weather' && onStyleLoadFailed) {
+      if (e.error && (basemap === 'custom-weather' || basemap === 'mapbox') && onStyleLoadFailed) {
         console.error('[Mapbox Style Verification Failed] Falling back to Satellite Streets:', e.error);
-        onStyleLoadFailed('custom-weather');
+        onStyleLoadFailed('satellite-streets');
       }
     });
 
