@@ -2,38 +2,39 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { RadarMap, BasemapType } from '../components/RadarMap';
+import { RadarMap, BasemapType, ModeTab } from '../components/RadarMap';
 import { WeatherWiseRadarCard } from '../components/WeatherWiseRadarCard';
 import { WeatherWiseAlertsPanel, WeatherAlertItem } from '../components/WeatherWiseAlertsPanel';
-import { RADAR_SITES } from '../lib/radar-config';
+import { RadarSiteRegistry, RadarNetworkType, RadarStation } from '../lib/radar/radar-provider';
 
 type RadarProduct = 'ref' | 'ref_x' | 'max_ref' | 'vel' | 'cc' | 'zdr';
-type TopTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
 type SpcDay = 'Day 1' | 'Day 2' | 'Day 3';
 
 const BASEMAP_STORAGE_KEY = 'mesovortex_basemap_preference';
 
 export default function MesoVortexWorkstation() {
-  const [tab, setTab] = useState<TopTab>('Radar');
+  const [tab, setTab] = useState<ModeTab>('Radar');
   const [spcDay, setSpcDay] = useState<SpcDay>('Day 1');
   const [product, setProduct] = useState<RadarProduct>('ref');
   const [tilt, setTilt] = useState('0.5');
   const [radarSite, setRadarSite] = useState('US');
+  const [selectedNetwork, setSelectedNetwork] = useState<RadarNetworkType | undefined>(undefined);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // SATELLITE IS DEFAULT ON STARTUP: satellite-streets
+  // Basemap state
   const [basemap, setBasemap] = useState<BasemapType>('satellite-streets');
   const [basemapStatus, setBasemapStatus] = useState<string>('Satellite Streets (Default)');
 
-  // Alerts Panel state
+  // Panels
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [liveAlerts, setLiveAlerts] = useState<WeatherAlertItem[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const currentSite =
-    RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
+  // Dynamic Station Resolution across any network
+  const currentStation: RadarStation = RadarSiteRegistry.getStation(radarSite);
+  const allStations = RadarSiteRegistry.getAllStations(selectedNetwork);
 
-  // 1. Load saved basemap preference from localStorage
+  // Load saved basemap preference
   useEffect(() => {
     try {
       const saved = localStorage.getItem(BASEMAP_STORAGE_KEY) as BasemapType | null;
@@ -42,18 +43,17 @@ export default function MesoVortexWorkstation() {
         setBasemapStatus(saved === 'satellite-streets' ? 'Satellite Streets (Default)' : 'Custom Weather');
       }
     } catch {
-      // localStorage fallback
+      // fallback
     }
   }, []);
 
-  // 2. Save preference to localStorage on user switch
   const handleSelectBasemap = (selected: BasemapType) => {
     setBasemap(selected);
     setBasemapStatus(selected === 'satellite-streets' ? 'Satellite Streets (Default)' : 'Custom Weather');
     try {
       localStorage.setItem(BASEMAP_STORAGE_KEY, selected);
     } catch {
-      // localStorage fallback
+      // fallback
     }
   };
 
@@ -70,13 +70,13 @@ export default function MesoVortexWorkstation() {
           areaDesc: f.properties?.areaDesc || '',
           population: `${Math.round(2 + Math.random() * 8)}K`,
           state: f.properties?.areaDesc?.split(',').pop()?.trim() || 'US',
-          wfo: currentSite.radarId,
+          wfo: currentStation.callsign,
           expiresMin: Math.round(15 + Math.random() * 45),
         }));
         setLiveAlerts(items);
       })
       .catch((err) => console.warn('[Alerts Fetch Error]:', err));
-  }, [currentSite.radarId]);
+  }, [currentStation.callsign]);
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#070c14] select-none font-sans">
@@ -93,17 +93,17 @@ export default function MesoVortexWorkstation() {
 
       {/* 2. TOP WEATHERWISE NAVIGATION BAR */}
       <div className="pointer-events-none absolute top-7 left-0 right-0 z-40 flex items-center justify-between px-4">
-        {/* Left Action Menu */}
+        {/* Left Action Menu & Radar Network Selector */}
         <div className="flex items-center gap-2 pointer-events-auto">
           <button
             onClick={() => setMenuOpen((v) => !v)}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-xl hover:bg-amber-300 transition font-black text-lg border border-amber-300 cursor-pointer"
-            title="Menu & Layer Selector"
+            title="Radar Directory & Network Filter"
           >
             ☰
           </button>
 
-          {/* Quick Basemap Toggle: Satellite vs Custom Style */}
+          {/* Quick Basemap Toggle */}
           <div className="flex items-center rounded-full border border-slate-700 bg-slate-950/90 p-0.5 shadow-xl backdrop-blur-md">
             <button
               onClick={() => handleSelectBasemap('satellite-streets')}
@@ -128,7 +128,7 @@ export default function MesoVortexWorkstation() {
           </div>
         </div>
 
-        {/* Center Floating White Pill With MesoVortex Logo */}
+        {/* Center Floating White Pill With Logo & Modes */}
         <div className="pointer-events-auto flex flex-col items-center">
           <div className="flex items-center gap-2 rounded-full bg-white px-3 py-1 shadow-2xl border border-slate-200">
             <div
@@ -147,13 +147,8 @@ export default function MesoVortexWorkstation() {
               <span className="text-[10px] text-slate-400">▾</span>
             </div>
 
-            <button className="text-slate-400 hover:text-slate-600 px-1 text-xs cursor-pointer">
-              🔍
-            </button>
-
-            {/* Mode Switcher Tabs */}
             <div className="flex items-center gap-1 font-bold text-xs">
-              {(['Radar', 'Composite', 'Satellite', 'Outlooks'] as TopTab[]).map((modeTab) => (
+              {(['Radar', 'Composite', 'Satellite', 'Outlooks'] as ModeTab[]).map((modeTab) => (
                 <button
                   key={modeTab}
                   onClick={() => setTab(modeTab)}
@@ -198,7 +193,7 @@ export default function MesoVortexWorkstation() {
         </button>
       </div>
 
-      {/* 3. FULL MAP CANVAS (Satellite Streets Default) */}
+      {/* 3. FULL MAP CANVAS (Supports all WSR-88D, TDWR, Mobile, Research, Spotter radials) */}
       <div className="absolute inset-0">
         <RadarMap
           product={product === 'ref_x' || product === 'max_ref' ? 'ref' : product}
@@ -207,14 +202,15 @@ export default function MesoVortexWorkstation() {
           basemap={basemap}
           tilt={tilt}
           spcDay={spcDay}
+          filterNetwork={selectedNetwork}
           onSelectSite={(id) => setRadarSite(id)}
         />
       </div>
 
       {/* 4. BOTTOM-LEFT FLOATING RADAR CARD */}
       <WeatherWiseRadarCard
-        siteId={radarSite === 'US' ? 'US CONUS' : currentSite.id}
-        siteName={radarSite === 'US' ? 'United States Overview' : currentSite.name}
+        siteId={radarSite === 'US' ? 'US CONUS' : currentStation.id}
+        siteName={radarSite === 'US' ? 'United States Overview' : `${currentStation.name} (${currentStation.network.toUpperCase()})`}
         product={product}
         tilt={tilt}
         isPlaying={isPlaying}
@@ -228,76 +224,87 @@ export default function MesoVortexWorkstation() {
         <WeatherWiseAlertsPanel
           alerts={liveAlerts}
           onClose={() => setAlertsOpen(false)}
-          onSelectAlert={(alert) => {
-            console.log('Inspecting alert:', alert);
-          }}
+          onSelectAlert={(alert) => console.log('Inspecting alert:', alert)}
         />
       )}
 
-      {/* Slide-out Layer Menu */}
+      {/* 6. EXPANDED RADAR NETWORK SELECTOR & DIRECTORY MODAL */}
       {menuOpen && (
-        <div className="fixed inset-0 z-50 flex bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="w-80 bg-white p-5 shadow-2xl space-y-5 text-slate-800">
+        <div className="fixed inset-0 z-50 flex bg-black/60 backdrop-blur-sm animate-fade-in font-sans">
+          <div className="w-96 bg-white p-5 shadow-2xl space-y-4 text-slate-800 flex flex-col h-full">
             <div className="flex items-center justify-between border-b pb-3 font-extrabold text-base">
               <div className="flex items-center gap-2">
                 <Image src="/logo.png" alt="MesoVortex" width={24} height={24} className="rounded-full" />
-                <span>MesoVortex Layers</span>
+                <span>Radar Network Directory</span>
               </div>
               <button onClick={() => setMenuOpen(false)}>✕</button>
             </div>
 
-            {/* Basemap Selection Section */}
-            <div className="space-y-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                Basemap Selector
-              </span>
-              <div className="space-y-1.5">
+            {/* Network Filters: WSR-88D, TDWR, Mobile, Research */}
+            <div className="flex gap-1 overflow-x-auto pb-1 text-[11px] font-bold">
+              {[
+                { label: 'All', val: undefined },
+                { label: 'WSR-88D', val: 'wsr88d' },
+                { label: 'FAA TDWR', val: 'tdwr' },
+                { label: 'Research', val: 'research' },
+                { label: 'Mobile (DOW)', val: 'mobile' },
+              ].map((btn) => (
                 <button
-                  onClick={() => {
-                    handleSelectBasemap('satellite-streets');
-                    setMenuOpen(false);
-                  }}
-                  className={`w-full text-left rounded-xl p-2.5 text-xs font-bold transition flex items-center justify-between ${
-                    basemap === 'satellite-streets'
+                  key={btn.label}
+                  onClick={() => setSelectedNetwork(btn.val as any)}
+                  className={`rounded-lg px-2.5 py-1 whitespace-nowrap transition ${
+                    selectedNetwork === btn.val
                       ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  <span>🛰️ Satellite Streets (Default)</span>
-                  {basemap === 'satellite-streets' && <span>✓</span>}
+                  {btn.label}
                 </button>
-
-                <button
-                  onClick={() => {
-                    handleSelectBasemap('custom-weather');
-                    setMenuOpen(false);
-                  }}
-                  className={`w-full text-left rounded-xl p-2.5 text-xs font-bold transition flex items-center justify-between ${
-                    basemap === 'custom-weather'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  <span>🎨 Custom Weather Style</span>
-                  {basemap === 'custom-weather' && <span>✓</span>}
-                </button>
-              </div>
-              <div className="text-[10px] text-slate-500 pt-1">
-                Active: <b>{basemapStatus}</b>
-              </div>
+              ))}
             </div>
 
-            {/* View Reset */}
-            <div className="border-t pt-3 space-y-2 text-xs font-bold">
+            {/* Searchable Station Directory */}
+            <div className="flex-1 overflow-y-auto space-y-1 pr-1 text-xs">
               <button
                 onClick={() => {
                   setRadarSite('US');
                   setMenuOpen(false);
                 }}
-                className="w-full text-left rounded-xl p-2.5 hover:bg-slate-100 text-slate-700"
+                className="w-full text-left rounded-xl p-2.5 bg-blue-50 hover:bg-blue-100 font-bold text-blue-900 border border-blue-200"
               >
                 🗺️ Reset View to Entire United States
               </button>
+
+              {allStations.map((stn) => (
+                <div
+                  key={stn.id}
+                  onClick={() => {
+                    setRadarSite(stn.id);
+                    setMenuOpen(false);
+                  }}
+                  className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition border ${
+                    radarSite === stn.id
+                      ? 'bg-blue-600 text-white font-bold border-blue-600'
+                      : 'hover:bg-slate-100 text-slate-700 border-slate-100'
+                  }`}
+                >
+                  <div>
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span>{stn.id}</span>
+                      <span className="text-[10px] font-mono opacity-70">({stn.callsign})</span>
+                    </div>
+                    <div className="text-[11px] opacity-80 line-clamp-1">{stn.name}</div>
+                  </div>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-black ${
+                    stn.network === 'tdwr' ? 'bg-purple-100 text-purple-800' :
+                    stn.network === 'mobile' ? 'bg-amber-100 text-amber-800' :
+                    stn.network === 'research' ? 'bg-cyan-100 text-cyan-800' :
+                    'bg-slate-200 text-slate-700'
+                  }`}>
+                    {stn.network}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
           <div className="flex-1" onClick={() => setMenuOpen(false)} />
