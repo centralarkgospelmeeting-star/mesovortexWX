@@ -222,7 +222,6 @@ export function autoSelectNearestRadar(lat: number, lon: number): string {
   const nearest = findNearestRadar(lat, lon, { limit: 1, maxKm: 400 });
   return nearest[0]?.site.id ?? 'KLZK';
 }
-}
 export type { RadarProductKey, RadarProductDef, FrameProvenance } from './product-registry';
 export { RADAR_PRODUCTS, getProductDef } from './product-registry';
 
