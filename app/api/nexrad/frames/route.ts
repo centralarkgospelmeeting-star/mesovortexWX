@@ -22,11 +22,9 @@ export async function GET(request: Request) {
   // 1. NOAA MRMS Algorithmic Severe Products
   if (productKey === 'mesh') {
     productCode = 'MESH';
-    // Maximum Estimated Size of Hail (accumulation swath)
     tileUrl = `${IEM_TILE}/mrms::MESH_Max60min/{z}/{x}/{y}.png`;
   } else if (productKey === 'azshear') {
     productCode = 'AZSHEAR';
-    // Low-Level Azimuthal Shear (Rotation Tracks / Tornado paths)
     tileUrl = `${IEM_TILE}/mrms::AzShear_0-2km/{z}/{x}/{y}.png`;
   }
   // 2. Multi-Tilt Reflectivity (and Max Reflectivity base frames)
@@ -58,10 +56,8 @@ export async function GET(request: Request) {
     productCode = 'DVL';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-DVL-0/{z}/{x}/{y}.png`;
   }
-  // 6. Dual-Pol CC, ZDR, KDP (proxies/substitutes where true L3 ridge tiles unavailable)
+  // 6. Dual-Pol CC, ZDR, KDP (proxies/substitutes)
   else if (productKey === 'cc') {
-    // P0: IEM ridge processed products do not currently expose N0C as ridge tiles in our integration.
-    // Use an MRMS proxy candidate; keep substitute/provenance flags honest in the registry.
     productCode = 'MRMS_RHOHV_PROXY';
     tileUrl = `${IEM_TILE}/mrms::RhoHV/{z}/{x}/{y}.png`;
   } else if (productKey === 'zdr') {
