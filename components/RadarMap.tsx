@@ -22,25 +22,12 @@ export type SpotterPin = {
   callsign: string;
 };
 
-export function RadarMap({
-  product = 'ref',
-  radarSite = 'KLZK',
-  mode = 'Radar',
-  tilt = '0.5',
-  basemap = 'satellite-streets',
-  radarOpacity = 0.88,
-  gateFilter = 5,
-  smoothing = false,
-  colorTable = 'nws',
-  showLightning = true,
-  showStormTracks = true,
-  showRadarSites = true,
-  showRangeRings = true,
-  showCounties = true,
-  showTornadoAnalysis = true,
-  spcDay, // <-- ADD THIS LINE
-  onSelectSite,
-}: RadarMapProps) {
+export interface RadarMapProps {
+  product?: string;
+  radarSite?: string;
+  mode?: ModeTab | string;
+  tilt?: string;
+  basemap?: BasemapType | string;
   spcDay?: 'Day 1' | 'Day 2' | 'Day 3' | string;
 
   // Display Controls
@@ -171,6 +158,7 @@ export function RadarMap({
   showRangeRings = true,
   showCounties = true,
   showTornadoAnalysis = true,
+  spcDay,
   onSelectSite,
 }: RadarMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
