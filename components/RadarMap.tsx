@@ -8,6 +8,20 @@ import { RADAR_SITES } from '../lib/radar-config';
 
 export type ModeTab = 'Radar' | '3D Radar' | 'Composite' | 'Satellite' | 'Models' | 'Outlooks';
 export type BasemapType = 'satellite-streets' | 'custom-weather' | 'mapbox' | 'satellite';
+export type BasemapId = BasemapType;
+export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
+
+// Exported for RightDock and Spotter modules
+export type SpotterPin = {
+  id: string;
+  hazardType: string;
+  description: string;
+  hailSize?: string;
+  lat: number;
+  lon: number;
+  timestamp: string;
+  callsign: string;
+};
 
 export interface RadarMapProps {
   product?: string;
@@ -16,7 +30,9 @@ export interface RadarMapProps {
   tilt?: string;
   basemap?: BasemapType | string;
   spcDay?: 'Day 1' | 'Day 2' | 'Day 3' | string;
+  spotterReports?: SpotterPin[];
   onSelectSite?: (siteId: string) => void;
+  onMapClickCoordinates?: (coords: [number, number]) => void;
 }
 
 const MAPBOX_TOKEN =
