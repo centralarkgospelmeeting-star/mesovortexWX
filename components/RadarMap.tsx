@@ -585,7 +585,7 @@ export function RadarMap({
     setVis(SPC_OUTLOOK_FILL_ID, mode === 'Outlooks');
     setVis(SPC_OUTLOOK_LINE_ID, mode === 'Outlooks' || true);
     setVis(WATCHES_FILL_LAYER_ID, showWatches);
-    setVis(WATCHES_LINE_ID, showWatches);
+    setVis(WATCHES_LINE_LAYER_ID, showWatches);
   }, [mapReady, mode, showWatches]);
 
   // Site recenter on selection
