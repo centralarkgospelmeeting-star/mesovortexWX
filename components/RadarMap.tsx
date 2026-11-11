@@ -479,12 +479,22 @@ export function RadarMap({
       const { distanceKm, distanceNm, azimuthDeg } = calculatePolarCoordinates(site.lat, site.lon, e.lngLat.lat, e.lngLat.lng);
       const tiltAngle = parseFloat(tilt) || 0.5;
       const beamHeightFt = calculateBeamHeight(distanceKm, tiltAngle, (site as any).elevation || 200);
-      let simulatedVal = 0; let unit = 'dBZ';
+            let simulatedVal = 0; let unit = 'dBZ';
       if (product === 'mesh') { simulatedVal = parseFloat((Math.random() * 2.5).toFixed(2)); unit = 'in'; }
       else if (product === 'azshear') { simulatedVal = parseFloat((Math.random() * 0.015).toFixed(4)); unit = 's⁻¹'; }
       else { simulatedVal = Math.floor(Math.random() * 75); unit = 'dBZ'; }
-      const stormClass = classifyStormGate(simulatedVal, product);
-      setTelemetry({ distanceKm, distanceNm, azimuthDeg, tiltAngle, beamHeightFt, estimatedValue: simulatedVal, unit, stormClass });
+      const stormClass = classifyStormGate(product, simulatedVal);
+      setTelemetry({
+        distanceKm,
+        distanceNm,
+        azimuthDeg,
+        tiltAngle,
+        beamHeightFt,
+        estimatedValue: simulatedVal,
+        unit,
+        signatureBadge: stormClass.badge,
+        hazardLevel: stormClass.hazardLevel,
+      } as any);
     });
     map.on('mouseout', () => setTelemetry(null));
     map.on('contextmenu', (e) => {
