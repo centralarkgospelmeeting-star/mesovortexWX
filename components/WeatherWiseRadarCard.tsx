@@ -25,8 +25,10 @@ type Props = {
   product: string;
   tilt: string;
   isPlaying: boolean;
+  maxRefWindow?: number;
   onSelectProduct: (p: ProductKey) => void;
   onSelectTilt: (t: string) => void;
+  onSelectMaxRefWindow?: (w: number) => void;
   onTogglePlay: () => void;
 
   // Display Controls
@@ -108,8 +110,10 @@ export function WeatherWiseRadarCard({
   product,
   tilt,
   isPlaying,
+  maxRefWindow = 10,
   onSelectProduct,
   onSelectTilt,
+  onSelectMaxRefWindow,
   onTogglePlay,
   gateFilter,
   onChangeGateFilter,
@@ -230,6 +234,35 @@ export function WeatherWiseRadarCard({
               )}
             </div>
           </div>
+
+          {/* Max Reflectivity Window Selector (shown only when MAX product active) */}
+          {product === 'max_ref' && (
+            <div className="pt-2 space-y-1.5">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
+                Max Reflectivity Window
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-500">Last</span>
+                {[5, 10, 20, 30].map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => onSelectMaxRefWindow?.(w)}
+                    className={`rounded-lg px-3 py-1 text-xs font-bold transition cursor-pointer ${
+                      maxRefWindow === w
+                        ? 'bg-amber-500 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {w}
+                  </button>
+                ))}
+                <span className="text-[10px] text-slate-500">scans</span>
+              </div>
+              <div className="text-[9px] text-slate-400 font-mono">
+                MAX REF ({maxRefWindow} scans) — per-pixel max over rolling window
+              </div>
+            </div>
+          )}
 
           {/* 2. EXPANDED RADAR PRODUCT TABS */}
           <div className="pt-3 space-y-2.5">
