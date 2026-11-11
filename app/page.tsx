@@ -189,7 +189,7 @@ export default function MesoVortexWorkstation() {
 
       {/* 3. FULL MAP CANVAS */}
       <div className="absolute inset-0">
-        <RadarMap
+                <RadarMap
           product={product}
           radarSite={radarSite}
           mode={tab}
