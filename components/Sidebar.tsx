@@ -1,55 +1,52 @@
 'use client';
 
 import type { Dispatch, SetStateAction } from 'react';
-import { RADAR_PRODUCTS, RADAR_SITES, type RadarProductKey } from '../lib/radar-config';
+import { RADAR_PRODUCTS, type RadarProductKey } from '../lib/radar-config';
+import type { ActivePlacefile } from './PlacefileManagerModal';
 
 type SidebarProps = {
   product: RadarProductKey | string;
   setProduct: Dispatch<SetStateAction<any>>;
-  radarSite?: string;
-  setRadarSite?: (site: string) => void;
+  // layer toggles
+  showLightning: boolean; setShowLightning: (v: boolean) => void;
+  showMetars: boolean; setShowMetars: (v: boolean) => void;
+  showLSR: boolean; setShowLSR: (v: boolean) => void;
+  showWatches: boolean; setShowWatches: (v: boolean) => void;
+  showRadarPills: boolean; setShowRadarPills: (v: boolean) => void;
+  // placefiles
+  placefiles: ActivePlacefile[];
+  onTogglePlacefile: (id: string) => void;
+  onOpenPlacefileManager: () => void;
+  onOpenPal: () => void;
+  onOpenLayerManager: () => void;
 };
 
-export function Sidebar({ product, setProduct, radarSite = 'KLZK', setRadarSite }: SidebarProps) {
+function ToggleRow({ label, checked, onChange, accent }: { label: string; checked: boolean; onChange: (v: boolean) => void; accent?: string }) {
   return (
-    <aside className="weather-sidebar w-[320px] overflow-y-auto border-r border-slate-800 bg-slate-950">
-      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-800 bg-slate-950/90 p-4 backdrop-blur-xl">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 text-2xl shadow-lg shadow-cyan-500/20">
-          ⚡
-        </div>
-        <div>
-          <div className="text-2xl font-black tracking-tight text-cyan-300">MESOVORTEX</div>
-          <div className="text-[10px] uppercase tracking-[0.25em] text-cyan-400">WX • PRO RADAR • MODELS</div>
-        </div>
-      </div>
+    <label className="flex cursor-pointer items-center justify-between rounded px-1.5 py-1 text-[11px] text-slate-200 hover:bg-white/5">
+      <span className="font-medium">{label}</span>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className={accent || 'accent-cyan-500'} />
+    </label>
+  );
+}
 
-      <div className="space-y-4 p-4">
-        <div>
-          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
-            Radar Site
-          </label>
-          <select
-            value={radarSite}
-            onChange={(e) => setRadarSite?.(e.target.value)}
-            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white focus:border-cyan-500 focus:outline-none"
-          >
-            {RADAR_SITES.map((site) => (
-              <option key={site.id} value={site.id}>
-                {site.name} ({site.id})
-              </option>
-            ))}
-          </select>
-        </div>
-        <input
-          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:border-cyan-500 focus:outline-none"
-          placeholder="Search city, radar site, or storm..."
-        />
+export function Sidebar({
+  product, setProduct,
+  showLightning, setShowLightning,
+  showMetars, setShowMetars,
+  showLSR, setShowLSR,
+  showWatches, setShowWatches,
+  showRadarPills, setShowRadarPills,
+  placefiles, onTogglePlacefile, onOpenPlacefileManager, onOpenPal, onOpenLayerManager,
+}: SidebarProps) {
+  const enabledPf = placefiles.filter(p => p.enabled).length;
+  return (
+    <aside className="flex h-full w-[250px] shrink-0 flex-col border-r border-slate-800 bg-[#0b1220] text-slate-100">
+      <div className="border-b border-slate-800 px-2 py-1.5 flex items-center justify-between">
+        <div className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">Radar Products</div>
+        <button onClick={onOpenPal} className="text-[9px] font-bold text-amber-300 hover:text-amber-200" title="Load .pal color table">.PAL</button>
       </div>
-
-      <div className="px-4 pb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
-        NEXRAD Products
-      </div>
-      <div className="grid grid-cols-2 gap-2 p-4">
+      <div className="grid grid-cols-2 gap-1 p-1.5 border-b border-slate-800">
         {RADAR_PRODUCTS.map((item) => {
           const active = product === item.key;
           return (
@@ -57,69 +54,53 @@ export function Sidebar({ product, setProduct, radarSite = 'KLZK', setRadarSite 
               key={item.key}
               onClick={() => setProduct(item.key)}
               title={item.sourceNote ? `${item.description} — ${item.sourceNote}` : item.description}
-              className={`rounded-2xl p-3 text-left text-sm transition ${
+              className={`rounded border px-1.5 py-1 text-left transition ${
                 active
-                  ? 'bg-gradient-to-br from-cyan-900 to-blue-900 text-cyan-100 ring-1 ring-cyan-500 shadow-lg shadow-cyan-500/10'
-                  : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                  ? 'border-cyan-500/70 bg-cyan-900/50 text-cyan-100'
+                  : 'border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-500 hover:text-white'
               }`}
             >
-              <div className="font-semibold">{item.short}</div>
-              <div className="mt-0.5 text-[10px] opacity-70">{item.label}</div>
+              <div className="text-[11px] font-extrabold leading-none">{item.short}</div>
+              <div className="mt-0.5 text-[9px] leading-tight opacity-80 line-clamp-1">{item.label}</div>
             </button>
           );
         })}
       </div>
 
-      <div className="px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
-        Advanced Tools
+      <div className="border-b border-slate-800 px-2 py-1.5 flex items-center justify-between">
+        <div className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">Layers</div>
+        <button onClick={onOpenLayerManager} className="text-[9px] font-bold text-slate-400 hover:text-white">MANAGER</button>
       </div>
-      <div className="space-y-2 p-4">
-        <button className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-medium text-white transition hover:from-cyan-400 hover:to-blue-500">
-          3D Volumetric Radar + Globe
-        </button>
-        <button className="w-full rounded-2xl bg-emerald-900/90 px-4 py-3 font-medium text-emerald-100 transition hover:bg-emerald-800">
-          ⚡ FastScan (Ultra Low Latency)
-        </button>
-        <button className="w-full rounded-2xl bg-violet-900/90 px-4 py-3 font-medium text-violet-100 transition hover:bg-violet-800">
-          Quad View (4 Products)
-        </button>
+      <div className="border-b border-slate-800 p-1 space-y-0.5">
+        <ToggleRow label="Lightning (GLM)" checked={showLightning} onChange={setShowLightning} accent="accent-amber-400" />
+        <ToggleRow label="METAR Stations" checked={showMetars} onChange={setShowMetars} accent="accent-emerald-400" />
+        <ToggleRow label="Storm Reports (LSR)" checked={showLSR} onChange={setShowLSR} accent="accent-sky-400" />
+        <ToggleRow label="Watch Boxes" checked={showWatches} onChange={setShowWatches} accent="accent-rose-400" />
+        <ToggleRow label="Radar Site Pills" checked={showRadarPills} onChange={setShowRadarPills} accent="accent-cyan-400" />
       </div>
 
-      <div className="px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
-        Threat Matrix
+      <div className="border-b border-slate-800 px-2 py-1.5 flex items-center justify-between">
+        <div className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">Placefiles</div>
+        <button onClick={onOpenPlacefileManager} className="text-[9px] font-bold text-cyan-300 hover:text-cyan-200">EDIT ({enabledPf}/{placefiles.length})</button>
       </div>
-      <div className="space-y-3 px-4 pb-5">
-        {[
-          { name: 'Tornado', value: 'Moderate', color: 'bg-red-500', width: '48%' },
-          { name: 'Wind', value: 'High', color: 'bg-amber-500', width: '72%' },
-          { name: 'Hail', value: 'Elevated', color: 'bg-orange-500', width: '61%' },
-          { name: 'Flash Flood', value: 'Watch', color: 'bg-cyan-500', width: '54%' },
-        ].map((threat) => (
-          <div key={threat.name} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm text-slate-200">{threat.name}</span>
-              <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">{threat.value}</span>
-            </div>
-            <div className="h-2 rounded-full bg-slate-800">
-              <div className={`h-full rounded-full ${threat.color}`} style={{ width: threat.width }} />
-            </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-1">
+        {placefiles.length === 0 ? (
+          <div className="px-1.5 py-1 text-[11px] text-slate-500">No placefiles configured.</div>
+        ) : (
+          <div className="space-y-0.5">
+            {placefiles.map((pf) => (
+              <label key={pf.id} className="flex cursor-pointer items-center justify-between rounded px-1.5 py-1 text-[10px] hover:bg-white/5">
+                <span className={`truncate pr-2 ${pf.enabled ? 'text-slate-200' : 'text-slate-500'}`} title={pf.name}>{pf.name}</span>
+                <input type="checkbox" checked={pf.enabled} onChange={() => onTogglePlacefile(pf.id)} className="accent-cyan-500" />
+              </label>
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
-      <div className="px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
-        Models
-      </div>
-      <div className="px-4 pb-5">
-        <select className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none">
-          <option>HRRR 18z (3km)</option>
-          <option>NAM Nest 3km</option>
-          <option>RAP 13km</option>
-          <option>GFS 0.25°</option>
-          <option>ECMWF Hi-Res</option>
-        </select>
+      <div className="border-t border-slate-800 p-1.5 text-[9px] text-slate-500 leading-tight">
+        MesoVortexWX Workstation • Map-first layout. Satellite/Models modes available from top bar.
       </div>
     </aside>
-
   );
 }
