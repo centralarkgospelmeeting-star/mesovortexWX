@@ -19,17 +19,16 @@ export async function GET(request: Request) {
   let productCode = 'N0B';
   let tileUrl = '';
   let frameCount = 10;
-  let loopAvailable = true;
 
-    // --- Product → IEM ridge/MRMS endpoint mapping ---
-   if (productKey === 'mesh') {
+  if (productKey === 'mesh') {
     productCode = 'MESH';
     tileUrl = `${IEM_TILE}/mrms::MESH_Max60min/{z}/{x}/{y}.png`;
-    loopAvailable = false;
   } else if (productKey === 'azshear') {
     productCode = 'AZSHEAR';
     tileUrl = `${IEM_TILE}/mrms::AzShear_0-2km/{z}/{x}/{y}.png`;
-    loopAvailable = false;
+  } else if (productKey === 'sw') {
+    productCode = 'N0W';
+    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0W-0/{z}/{x}/{y}.png`;
   } else if (productKey === 'ref' || productKey === 'maxref' || productKey === 'max_ref' || productKey === 'ref_x') {
     if (tilt === '0.9') productCode = 'N1B';
     else if (tilt === '1.3') productCode = 'N2B';
@@ -47,41 +46,6 @@ export async function GET(request: Request) {
   } else if (productKey === 'srvel') {
     productCode = 'N0S';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0S-0/{z}/{x}/{y}.png`;
-  } else if (productKey === 'sw') {
-    productCode = 'SW';
-    tileUrl = `${IEM_TILE}/mrms::SpectrumWidth/{z}/{x}/{y}.png`;
-    loopAvailable = false;
-  } else if (productKey === 'tops') {
-    productCode = 'EET';
-    tileUrl = `${IEM_TILE}/mrms::EchoTop18/{z}/{x}/{y}.png`;
-    loopAvailable = false;
-  } else if (productKey === 'vil') {
-    productCode = 'DVL';
-    tileUrl = `${IEM_TILE}/mrms::VIL/{z}/{x}/{y}.png`;
-    loopAvailable = false;
-  } else if (productKey === 'cc' || productKey === 'min_cc') {
-    productCode = 'N0C';
-    tileUrl = `${IEM_TILE}/mrms::RhoHV/{z}/{x}/{y}.png`;
-    loopAvailable = false;
-  } else if (productKey === 'zdr') {
-    productCode = 'N0X';
-    tileUrl = `${IEM_TILE}/mrms::ReflectivityAtLowestAltitude/{z}/{x}/{y}.png`;
-    loopAvailable = false;
-  } else if (productKey === 'kdp') {
-    productCode = 'N0K';
-    tileUrl = `${IEM_TILE}/mrms::MultiSensorQPE01H/{z}/{x}/{y}.png`;
-    loopAvailable = false;
-  } else if (productKey === 'hhc') {
-    productCode = 'HHC';
-    tileUrl = `${IEM_TILE}/mrms::HydrometeorClassification/{z}/{x}/{y}.png`;
-    loopAvailable = false;
-  } else if (productKey === 'qpe') {
-    productCode = 'DPR';
-    tileUrl = `${IEM_TILE}/mrms::MultiSensorQPE01H/{z}/{x}/{y}.png`;
-    loopAvailable = false;
-  }
-    // MRMS fallback: spectrum width not in MRMS, but reflectivity composite as backup
-    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0W-0/{z}/{x}/{y}.png`;
   } else if (productKey === 'tops') {
     productCode = 'EET';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-EET-0/{z}/{x}/{y}.png`;
@@ -90,7 +54,6 @@ export async function GET(request: Request) {
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-DVL-0/{z}/{x}/{y}.png`;
   } else if (productKey === 'cc' || productKey === 'min_cc') {
     productCode = 'N0C';
-    // Try ridge N0C first; MRMS RhoHV as fallback
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0C-0/{z}/{x}/{y}.png`;
   } else if (productKey === 'zdr') {
     productCode = 'N0X';
@@ -104,26 +67,24 @@ export async function GET(request: Request) {
   } else if (productKey === 'qpe') {
     productCode = 'DPR';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-DPR-0/{z}/{x}/{y}.png`;
+  } else {
+    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0B-0/{z}/{x}/{y}.png`;
   }
 
   const compositeLatest = `${IEM_TILE}/nexrad-n0q-900913/{z}/{x}/{y}.png`;
   const def = getProductDef(productKey);
   const loopExpected = def?.loopExpected ?? !['mesh', 'azshear', 'cc', 'zdr', 'kdp', 'hhc', 'qpe'].includes(productKey);
-  if (def?.sourceNote) { /* keep notes */ }
 
   const now = new Date();
   const frames: { time: string; label: string; tileUrl: string; ageMinutes: number }[] = [];
 
-  // For Reflectivity X: generate interpolated frame timestamps between actual scans
-  // IEM doesn't provide true interpolated data, so we request the nearest actual scan
-  // but provide more frequent frame slots for smoother playback
   const isRefX = productKey === 'ref_x';
   const intervalMinutes = isRefX ? 2.5 : 5;
-  const totalMinutes = frameCount * 5;
 
   for (let i = frameCount; i >= 1; i--) {
     const date = new Date(now.getTime() - i * intervalMinutes * 60 * 1000);
-    date.setUTCMinutes(Math.floor(date.getUTCMinutes() / 2.5) * 2.5, 0, 0);
+    date.setUTCSeconds(0, 0);
+    date.setUTCMinutes(Math.floor(date.getUTCMinutes() / 5) * 5);
 
     const y = date.getUTCFullYear();
     const m = String(date.getUTCMonth() + 1).padStart(2, '0');
@@ -133,15 +94,10 @@ export async function GET(request: Request) {
     const stamp = `${y}${m}${d}${h}${min}`;
     const ageMinutes = Math.round((now.getTime() - date.getTime()) / 60000);
 
-        let frameTile = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-${stamp}/{z}/{x}/{y}.png`;
-    // Static products (no time-stepped tiles available) use live tile URL
-    if (['mesh', 'azshear', 'cc', 'zdr', 'kdp', 'hhc', 'qpe', 'min_cc', 'sw'].includes(productKey)) {
-      frameTile = tileUrl;
-    }
-    // Max Reflectivity: use reflectivity base frames (client-side compositing handles the max)
-    if (productKey === 'maxref' || productKey === 'max_ref') {
-      frameTile = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-${stamp}/{z}/{x}/{y}.png`;
-    }
+    const staticProduct = ['mesh', 'azshear', 'cc', 'zdr', 'kdp', 'hhc', 'qpe', 'min_cc', 'sw'].includes(productKey);
+    const frameTile = staticProduct
+      ? tileUrl
+      : `${IEM_TILE}/ridge::${site.radarId}-${productCode}-${stamp}/{z}/{x}/{y}.png`;
 
     frames.push({
       time: date.toISOString(),
@@ -160,14 +116,14 @@ export async function GET(request: Request) {
 
   const notes: string[] = [];
   if (def?.sourceNote) notes.push(def.sourceNote);
-  if (!loopExpected) notes.push('Historical time-stepped loop may be limited or static for this product/source path.');
-  if (productKey === 'maxref' || productKey === 'max_ref') notes.push('Max Reflectivity: per-pixel max over selected scan window (client-side compositing from reflectivity frames).');
-  if (productKey === 'ref_x') notes.push('Reflectivity X: interpolated frame timestamps for smoother playback (nearest-scan data).');
-  if (['cc', 'zdr', 'kdp'].includes(productKey)) notes.push('Dual-pol product: true L3 ridge tiles may be unavailable; MRMS proxy used where noted.');
+  if (!loopExpected) notes.push('Historical time-stepped loop may be limited or static for this product.');
+  if (productKey === 'maxref' || productKey === 'max_ref') {
+    notes.push('Max Reflectivity uses reflectivity frames. Per-pixel max is applied when those frames are composited.');
+  }
 
   return Response.json(
     {
-      source: 'IEM & NOAA MRMS Severe Ingest',
+      source: 'IEM',
       attribution: PRODUCT_ATTRIBUTION_IEM,
       fetchedAt: now.toISOString(),
       station: site.radarId,
