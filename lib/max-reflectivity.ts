@@ -1,136 +1,148 @@
-// Client-side max reflectivity compositing for IEM ridge reflectivity tiles.
-// Composites per-pixel maximum dBZ over a set of scan frame tile URLs.
-// Preserves the source reflectivity color table by selecting the pixel
-// whose color maps to the highest dBZ value.
+// Standard NWS Level III Reflectivity Color-to-dBZ Calibrated Scale
+// Maps physical dBZ intervals to RGBA values
+export interface DbzThreshold {
+  dbz: number;
+  r: number;
+  g: number;
+  b: number;
+}
 
-export type MaxRefWindow = 5 | 10 | 20 | 30;
-
-// Standard NWS reflectivity color scale (approximate, matches common IEM N0Q/N0B rendering)
-// dBZ -> [r,g,b]. Ordered ascending.
-const REF_DBZ_TABLE: Array<{ dbz: number; rgb: [number, number, number] }> = [
-  { dbz: -30, rgb: [0, 0, 0] },
-  { dbz: 5, rgb: [4, 233, 231] },
-  { dbz: 10, rgb: [1, 159, 244] },
-  { dbz: 15, rgb: [3, 0, 244] },
-  { dbz: 20, rgb: [2, 253, 2] },
-  { dbz: 25, rgb: [1, 197, 1] },
-  { dbz: 30, rgb: [0, 142, 0] },
-  { dbz: 35, rgb: [253, 248, 2] },
-  { dbz: 40, rgb: [229, 188, 0] },
-  { dbz: 45, rgb: [253, 149, 0] },
-  { dbz: 50, rgb: [253, 0, 0] },
-  { dbz: 55, rgb: [212, 0, 0] },
-  { dbz: 60, rgb: [188, 0, 0] },
-  { dbz: 65, rgb: [248, 0, 253] },
-  { dbz: 70, rgb: [152, 84, 198] },
-  { dbz: 75, rgb: [173, 144, 240] },
-  { dbz: 80, rgb: [255, 255, 255] },
+export const REFLECTIVITY_COLOR_MAP: DbzThreshold[] = [
+  { dbz: 75, r: 255, g: 255, b: 255 }, // White (> 75 dBZ Extreme Core)
+  { dbz: 70, r: 152, g: 84,  b: 198 }, // Purple
+  { dbz: 65, r: 248, g: 0,   b: 253 }, // Magenta
+  { dbz: 60, r: 212, g: 0,   b: 0   }, // Dark Red
+  { dbz: 55, r: 253, g: 0,   b: 0   }, // Red
+  { dbz: 50, r: 253, g: 149, b: 0   }, // Orange
+  { dbz: 45, r: 253, g: 248, b: 2   }, // Yellow
+  { dbz: 40, r: 229, g: 188, b: 0   }, // Gold/Dark Yellow
+  { dbz: 35, r: 0,   g: 142, b: 0   }, // Dark Green
+  { dbz: 30, r: 1,   g: 197, b: 1   }, // Medium Green
+  { dbz: 25, r: 2,   g: 253, b: 2   }, // Bright Green
+  { dbz: 20, r: 3,   g: 0,   b: 244 }, // Dark Blue
+  { dbz: 15, r: 1,   g: 159, b: 244 }, // Medium Blue
+  { dbz: 10, r: 4,   g: 233, b: 231 }, // Light Blue
+  { dbz: 5,  r: 4,   g: 233, b: 231 }, // Light Cyan
 ];
 
-// Build a fast RGB->dBZ lookup (quantized 5 bits per channel = 32^3 entries)
-const LUT_BITS = 5;
-const LUT_SIZE = 1 << LUT_BITS;
-const lut = new Int8Array(LUT_SIZE * LUT_SIZE * LUT_SIZE); // stores dBZ (-128..127)
+/**
+ * Maps an RGBA pixel back to its corresponding physical dBZ value.
+ * Returns -1 if the pixel is transparent or background clutter.
+ */
+export function pixelToDbz(r: number, g: number, b: number, a: number): number {
+  if (a < 30) return -1;
 
-function colorDist2(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number) {
-  const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
-  return dr * dr + dg * dg + db * db;
-}
+  let closestDbz = -1;
+  let minDiff = 80;
 
-function buildLut() {
-  for (let ri = 0; ri < LUT_SIZE; ri++) {
-    for (let gi = 0; gi < LUT_SIZE; gi++) {
-      for (let bi = 0; bi < LUT_SIZE; bi++) {
-        const r = (ri << (8 - LUT_BITS)) + (1 << (7 - LUT_BITS));
-        const g = (gi << (8 - LUT_BITS)) + (1 << (7 - LUT_BITS));
-        const b = (bi << (8 - LUT_BITS)) + (1 << (7 - LUT_BITS));
-        // transparent/black-ish treated as no echo
-        let bestDbz = -100;
-        if (!(r < 10 && g < 10 && b < 10)) {
-          let bestD = Infinity;
-          for (const e of REF_DBZ_TABLE) {
-            const d = colorDist2(r, g, b, e.rgb[0], e.rgb[1], e.rgb[2]);
-            if (d < bestD) { bestD = d; bestDbz = e.dbz; }
-          }
-          // if too far from any reflectivity color, treat as non-reflectivity
-          if (bestD > 80 * 80) bestDbz = -100;
-        }
-        lut[(ri << (LUT_BITS * 2)) | (gi << LUT_BITS) | bi] = bestDbz;
-      }
+  for (let i = 0; i < REFLECTIVITY_COLOR_MAP.length; i++) {
+    const entry = REFLECTIVITY_COLOR_MAP[i];
+    const diff = Math.abs(r - entry.r) + Math.abs(g - entry.g) + Math.abs(b - entry.b);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestDbz = entry.dbz;
     }
   }
-}
-buildLut();
 
-function rgbToDbz(r: number, g: number, b: number, a: number): number {
-  if (a < 20) return -100; // transparent
-  const ri = r >> (8 - LUT_BITS);
-  const gi = g >> (8 - LUT_BITS);
-  const bi = b >> (8 - LUT_BITS);
-  return lut[(ri << (LUT_BITS * 2)) | (gi << LUT_BITS) | bi];
+  return closestDbz;
 }
 
-const tileCache = new Map<string, Promise<ImageData | null>>();
+/**
+ * Maps a calculated maximum dBZ value to its official NWS RGBA color.
+ */
+export function dbzToRgba(dbz: number): [number, number, number, number] {
+  if (dbz < 5) return [0, 0, 0, 0];
 
-async function fetchTileImageData(url: string): Promise<ImageData | null> {
-  const cached = tileCache.get(url);
-  if (cached) return cached;
-  const p = (async () => {
+  for (let i = 0; i < REFLECTIVITY_COLOR_MAP.length; i++) {
+    const entry = REFLECTIVITY_COLOR_MAP[i];
+    if (dbz >= entry.dbz) {
+      return [entry.r, entry.g, entry.b, 235]; // 0.92 alpha
+    }
+  }
+
+  return [4, 233, 231, 200];
+}
+
+/**
+ * Loads an image from a URL into an HTMLImageElement asynchronously.
+ */
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = (e) => reject(e);
+    img.src = url;
+  });
+}
+
+/**
+ * Core Algorithm: Computes the per-pixel maximum reflectivity composite across
+ * a rolling history window of volume scans.
+ */
+export async function computeMaxReflectivityCanvas(
+  frameUrls: string[],
+  width = 512,
+  height = 512
+): Promise<string> {
+  if (!frameUrls || frameUrls.length === 0) return '';
+
+  const offscreen = document.createElement('canvas');
+  offscreen.width = width;
+  offscreen.height = height;
+  const ctx = offscreen.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return '';
+
+  // Array to store maximum dBZ value at each pixel index
+  const totalPixels = width * height;
+  const maxDbzBuffer = new Float32Array(totalPixels);
+  maxDbzBuffer.fill(-1);
+
+  // Load and sample each volume scan in the rolling window
+  for (const url of frameUrls) {
     try {
-      const resp = await fetch(url, { cache: 'force-cache' });
-      if (!resp.ok) return null;
-      const blob = await resp.blob();
-      const bmp = await createImageBitmap(blob);
-      const c = document.createElement('canvas');
-      c.width = bmp.width; c.height = bmp.height;
-      const ctx = c.getContext('2d');
-      if (!ctx) return null;
-      ctx.drawImage(bmp, 0, 0);
-      bmp.close();
-      return ctx.getImageData(0, 0, c.width, c.height);
-    } catch {
-      return null;
-    }
-  })();
-  tileCache.set(url, p);
-  // simple cache bound
-  if (tileCache.size > 400) {
-    const first = tileCache.keys().next().value;
-    if (first) tileCache.delete(first);
-  }
-  return p;
-}
+      const img = await loadImage(url);
+      ctx.clearRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const data = imgData.data;
 
-export async function compositeMaxRefTile(frameTileUrls: string[], z: number, x: number, y: number): Promise<ImageBitmap | null> {
-  if (!frameTileUrls.length) return null;
-  const urls = frameTileUrls.map((t) => t.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y)));
-  const images = await Promise.all(urls.map(fetchTileImageData));
-  const valid = images.filter((im): im is ImageData => !!im);
-  if (!valid.length) return null;
+      for (let i = 0; i < totalPixels; i++) {
+        const offset = i * 4;
+        const r = data[offset];
+        const g = data[offset + 1];
+        const b = data[offset + 2];
+        const a = data[offset + 3];
 
-  const w = valid[0].width, h = valid[0].height;
-  const out = new ImageData(w, h);
-  const outData = out.data;
-  // init transparent
-  for (let i = 0; i < outData.length; i += 4) { outData[i + 3] = 0; }
-  const bestDbz = new Int16Array(w * h);
-  for (let i = 0; i < bestDbz.length; i++) bestDbz[i] = -1000;
-
-  for (const img of valid) {
-    const d = img.data;
-    const len = Math.min(bestDbz.length, (d.length / 4) | 0);
-    for (let i = 0; i < len; i++) {
-      const o = i * 4;
-      const dbz = rgbToDbz(d[o], d[o + 1], d[o + 2], d[o + 3]);
-      if (dbz > bestDbz[i]) {
-        bestDbz[i] = dbz;
-        outData[o] = d[o]; outData[o + 1] = d[o + 1]; outData[o + 2] = d[o + 2]; outData[o + 3] = d[o + 3];
+        const dbz = pixelToDbz(r, g, b, a);
+        if (dbz > maxDbzBuffer[i]) {
+          maxDbzBuffer[i] = dbz;
+        }
       }
+    } catch {
+      // Continue processing other frames if one tile fails
     }
   }
-  return createImageBitmap(out);
-}
 
-export function clearMaxRefTileCache() {
-  tileCache.clear();
+  // Paint the final maximum composite image
+  const outputImgData = ctx.createImageData(width, height);
+  const outData = outputImgData.data;
+
+  for (let i = 0; i < totalPixels; i++) {
+    const maxDbz = maxDbzBuffer[i];
+    const offset = i * 4;
+
+    if (maxDbz >= 5) {
+      const [r, g, b, a] = dbzToRgba(maxDbz);
+      outData[offset] = r;
+      outData[offset + 1] = g;
+      outData[offset + 2] = b;
+      outData[offset + 3] = a;
+    } else {
+      outData[offset + 3] = 0; // Transparent background
+    }
+  }
+
+  ctx.putImageData(outputImgData, 0, 0);
+  return offscreen.toDataURL('image/png');
 }
