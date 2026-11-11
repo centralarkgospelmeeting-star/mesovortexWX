@@ -33,7 +33,7 @@ export default function MesoVortexWorkstation() {
   const [product, setProduct] = useState<RadarProduct>('ref');
   const [tilt, setTilt] = useState('0.5');
   const [radarSite, setRadarSite] = useState('KLZK');
-  const [maxRefWindow, setMaxRefWindow] = useState(10); // Rolling window: 5, 10, 20, or 30 scans
+  const [maxRefWindow, setMaxRefWindow] = useState(10); // Declared state resolves line 55
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Basemap State
@@ -71,7 +71,7 @@ export default function MesoVortexWorkstation() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#070c14] select-none font-sans">
       
-      {/* 1. TOP EDGE LEGEND BAR (Dynamic Unit & Product Scale) */}
+      {/* 1. TOP EDGE LEGEND BAR */}
       <div className="absolute top-0 left-0 right-0 z-40 h-5 flex text-[9px] font-black text-slate-900 shadow-md">
         {product === 'max_ref' ? (
           <>
@@ -143,7 +143,7 @@ export default function MesoVortexWorkstation() {
         )}
       </div>
 
-      {/* 2. TOP WEATHERWISE NAVIGATION BAR */}
+      {/* 2. TOP NAVIGATION BAR */}
       <div className="pointer-events-none absolute top-7 left-0 right-0 z-40 flex items-center justify-between px-4">
         <button
           onClick={() => setMenuOpen((v) => !v)}
@@ -223,7 +223,7 @@ export default function MesoVortexWorkstation() {
         </button>
       </div>
 
-      {/* 3. FULL MAP CANVAS (Supports Live Radar & Max Ref Swaths) */}
+      {/* 3. FULL MAP CANVAS */}
       <div className="absolute inset-0">
         <RadarMap
           product={product}
