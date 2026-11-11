@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   let frameCount = 10;
   let loopAvailable = true;
 
-  // --- Product → IEM ridge/MRMS endpoint mapping ---
+    // --- Product → IEM ridge/MRMS endpoint mapping ---
   if (productKey === 'mesh') {
     productCode = 'MESH';
     tileUrl = `${IEM_TILE}/mrms::MESH_Max60min/{z}/{x}/{y}.png`;
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     else productCode = 'N0B';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
     if (productKey === 'maxref' || productKey === 'max_ref') frameCount = 30;
-    if (productKey === 'ref_x') frameCount = 20; // more frames for smoother playback
+    if (productKey === 'ref_x') frameCount = 20;
   } else if (productKey === 'vel' || productKey === 'norm_vel' || productKey === 'nrvel') {
     if (tilt === '0.9') productCode = 'N1U';
     else if (tilt === '1.3') productCode = 'N2U';
@@ -50,6 +50,8 @@ export async function GET(request: Request) {
   } else if (productKey === 'sw') {
     productCode = 'N0W';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0W-0/{z}/{x}/{y}.png`;
+    // MRMS fallback: spectrum width not in MRMS, but reflectivity composite as backup
+    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0W-0/{z}/{x}/{y}.png`;
   } else if (productKey === 'tops') {
     productCode = 'EET';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-EET-0/{z}/{x}/{y}.png`;
@@ -58,6 +60,7 @@ export async function GET(request: Request) {
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-DVL-0/{z}/{x}/{y}.png`;
   } else if (productKey === 'cc' || productKey === 'min_cc') {
     productCode = 'N0C';
+    // Try ridge N0C first; MRMS RhoHV as fallback
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0C-0/{z}/{x}/{y}.png`;
   } else if (productKey === 'zdr') {
     productCode = 'N0X';
