@@ -3,30 +3,52 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { RadarMap, BasemapType } from '../components/RadarMap';
-import { WeatherWiseRadarCard } from '../components/WeatherWiseRadarCard';
+import { WeatherWiseRadarCard, ProductKey } from '../components/WeatherWiseRadarCard';
 import { WeatherWiseAlertsPanel, WeatherAlertItem } from '../components/WeatherWiseAlertsPanel';
+import { SynchronizedQuadView } from '../components/SynchronizedQuadView';
+import { CrossSectionModal } from '../components/CrossSectionModal';
+import { computeVerticalCrossSection, CrossSectionResult } from '../lib/cross-section';
 import { RADAR_SITES } from '../lib/radar-config';
 
-type RadarProduct = 'ref' | 'ref_x' | 'max_ref' | 'vel' | 'cc' | 'zdr';
 type TopTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
 type SpcDay = 'Day 1' | 'Day 2' | 'Day 3';
 
 export default function MesoVortexWorkstation() {
   const [tab, setTab] = useState<TopTab>('Radar');
   const [spcDay, setSpcDay] = useState<SpcDay>('Day 1');
-  const [product, setProduct] = useState<RadarProduct>('ref');
+  const [product, setProduct] = useState<ProductKey>('ref');
   const [tilt, setTilt] = useState('0.5');
   const [radarSite, setRadarSite] = useState('KLZK');
-  const [maxRefWindow, setMaxRefWindow] = useState(10); // Rolling window: 5, 10, 20, or 30 scans
   const [isPlaying, setIsPlaying] = useState(false);
+
+  // Basemap state
+  const [basemap, setBasemap] = useState<BasemapType>('satellite-streets');
+
+  // Display Controls
+  const [gateFilter, setGateFilter] = useState(5);
+  const [opacity, setOpacity] = useState(0.88);
+  const [smoothing, setSmoothing] = useState(false);
+  const [colorTable, setColorTable] = useState('nws');
+
+  // Overlays
+  const [showLightning, setShowLightning] = useState(true);
+  const [showStormTracks, setShowStormTracks] = useState(true);
+  const [showRadarSites, setShowRadarSites] = useState(true);
+  const [showRangeRings, setShowRangeRings] = useState(true);
+  const [showCounties, setShowCounties] = useState(true);
+  const [showTornadoAnalysis, setShowTornadoAnalysis] = useState(true);
+
+  // Advanced Modals
+  const [showComparison, setShowComparison] = useState(false);
+  const [crossSectionData, setCrossSectionData] = useState<CrossSectionResult | null>(null);
 
   // Alerts Panel state
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [liveAlerts, setLiveAlerts] = useState<WeatherAlertItem[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const currentSite = RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
-  const isMaxRef = product === 'max_ref' || product === 'ref_x';
+  const currentSite =
+    RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
 
   // Fetch real-time NWS Alerts
   useEffect(() => {
@@ -52,42 +74,52 @@ export default function MesoVortexWorkstation() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#070c14] select-none font-sans">
       
-      {/* 1. TOP EDGE RAINBOW THREAT SCALE WITH DYNAMIC MAX REF INDICATOR */}
+      {/* 1. TOP EDGE RAINBOW THREAT SCALE */}
       <div className="absolute top-0 left-0 right-0 z-40 h-5 flex text-[9px] font-black text-slate-900 shadow-md">
-        {isMaxRef ? (
-          <>
-            <div className="w-44 bg-purple-700 text-white flex items-center justify-center tracking-wider uppercase font-mono px-2">
-              ⚡ MAX REF · {maxRefWindow} SCANS COMPOSITE
-            </div>
-            <div className="flex-1 bg-[#04e9e7] flex items-center justify-center">5 dBZ</div>
-            <div className="flex-1 bg-[#02fd02] flex items-center justify-center">30 dBZ</div>
-            <div className="flex-1 bg-[#fdf802] flex items-center justify-center">45 dBZ</div>
-            <div className="flex-1 bg-[#fd0000] flex items-center justify-center text-white">55 dBZ Hail</div>
-            <div className="flex-1 bg-[#f800fd] flex items-center justify-center text-white">65 dBZ Core</div>
-            <div className="flex-1 bg-[#ffffff] flex items-center justify-center text-slate-950">75+ dBZ Swath</div>
-          </>
-        ) : (
-          <>
-            <div className="flex-1 bg-[#c1e9c1] flex items-center justify-center">General Risk</div>
-            <div className="flex-1 bg-[#7fc57f] flex items-center justify-center">Marginal Risk</div>
-            <div className="flex-1 bg-[#f6f67d] flex items-center justify-center">Slight Risk</div>
-            <div className="flex-1 bg-[#edbf69] flex items-center justify-center">Enhanced Risk</div>
-            <div className="flex-1 bg-[#e56d6d] flex items-center justify-center text-white">Moderate Risk</div>
-            <div className="flex-1 bg-[#ff66ff] flex items-center justify-center text-white">High Risk</div>
-          </>
-        )}
+        <div className="flex-1 bg-[#c1e9c1] flex items-center justify-center">General Risk</div>
+        <div className="flex-1 bg-[#7fc57f] flex items-center justify-center">Marginal Risk</div>
+        <div className="flex-1 bg-[#f6f67d] flex items-center justify-center">Slight Risk</div>
+        <div className="flex-1 bg-[#edbf69] flex items-center justify-center">Enhanced Risk</div>
+        <div className="flex-1 bg-[#e56d6d] flex items-center justify-center text-white">Moderate Risk</div>
+        <div className="flex-1 bg-[#ff66ff] flex items-center justify-center text-white">High Risk</div>
       </div>
 
       {/* 2. TOP WEATHERWISE NAVIGATION BAR */}
       <div className="pointer-events-none absolute top-7 left-0 right-0 z-40 flex items-center justify-between px-4">
-        {/* Menu Button */}
-        <button
-          onClick={() => setMenuOpen((v) => !v)}
-          className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-xl hover:bg-amber-300 transition font-black text-lg border border-amber-300 cursor-pointer"
-          title="Menu"
-        >
-          ☰
-        </button>
+        {/* Left Action Menu */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-xl hover:bg-amber-300 transition font-black text-lg border border-amber-300 cursor-pointer"
+            title="Menu & Layer Selector"
+          >
+            ☰
+          </button>
+
+          {/* Quick Basemap Toggle */}
+          <div className="flex items-center rounded-full border border-slate-700 bg-slate-950/90 p-0.5 shadow-xl backdrop-blur-md">
+            <button
+              onClick={() => setBasemap('satellite-streets')}
+              className={`rounded-full px-3 py-1 text-xs font-bold transition cursor-pointer ${
+                basemap === 'satellite-streets'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              🛰️ Satellite
+            </button>
+            <button
+              onClick={() => setBasemap('custom-weather')}
+              className={`rounded-full px-3 py-1 text-xs font-bold transition cursor-pointer ${
+                basemap === 'custom-weather'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              🎨 Custom Mapbox
+            </button>
+          </div>
+        </div>
 
         {/* Center Floating White Pill With MesoVortex Logo */}
         <div className="pointer-events-auto flex flex-col items-center">
@@ -107,10 +139,6 @@ export default function MesoVortexWorkstation() {
               <span>MesoVortex</span>
               <span className="text-[10px] text-slate-400">▾</span>
             </div>
-
-            <button className="text-slate-400 hover:text-slate-600 px-1 text-xs cursor-pointer">
-              🔍
-            </button>
 
             {/* Mode Switcher Tabs */}
             <div className="flex items-center gap-1 font-bold text-xs">
@@ -159,31 +187,73 @@ export default function MesoVortexWorkstation() {
         </button>
       </div>
 
-      {/* 3. FULL MAP CANVAS (Supports Dynamic Max Reflectivity Swaths) */}
+      {/* 3. FULL MAP CANVAS */}
       <div className="absolute inset-0">
         <RadarMap
           product={product}
           radarSite={radarSite}
           mode={tab}
           tilt={tilt}
-          maxRefWindow={maxRefWindow}
           spcDay={spcDay}
+          radarOpacity={opacity}
+          gateFilter={gateFilter}
+          smoothing={smoothing}
+          colorTable={colorTable}
+          showLightning={showLightning}
+          showStormTracks={showStormTracks}
+          showRadarSites={showRadarSites}
+          showRangeRings={showRangeRings}
+          showCounties={showCounties}
+          showTornadoAnalysis={showTornadoAnalysis}
           onSelectSite={(id) => setRadarSite(id)}
         />
       </div>
 
-      {/* 4. BOTTOM-LEFT FLOATING RADAR CARD */}
+      {/* 4. EXPANDED WEATHERWISE RADAR CARD (Wireframe 2) */}
       <WeatherWiseRadarCard
         siteId={currentSite.id}
         siteName={currentSite.name}
         product={product}
         tilt={tilt}
-        maxRefWindow={maxRefWindow}
         isPlaying={isPlaying}
         onSelectProduct={(p) => setProduct(p)}
         onSelectTilt={(t) => setTilt(t)}
-        onSelectMaxRefWindow={(w) => setMaxRefWindow(w)}
         onTogglePlay={() => setIsPlaying((p) => !p)}
+        // Display controls
+        gateFilter={gateFilter}
+        onChangeGateFilter={(val) => setGateFilter(val)}
+        opacity={opacity}
+        onChangeOpacity={(val) => setOpacity(val)}
+        smoothing={smoothing}
+        onToggleSmoothing={() => setSmoothing((v) => !v)}
+        colorTable={colorTable}
+        onChangeColorTable={(tbl) => setColorTable(tbl)}
+        // Map Overlays
+        showLightning={showLightning}
+        onToggleLightning={() => setShowLightning((v) => !v)}
+        showStormTracks={showStormTracks}
+        onToggleStormTracks={() => setShowStormTracks((v) => !v)}
+        showRadarSites={showRadarSites}
+        onToggleRadarSites={() => setShowRadarSites((v) => !v)}
+        showRangeRings={showRangeRings}
+        onToggleRangeRings={() => setShowRangeRings((v) => !v)}
+        showCounties={showCounties}
+        onToggleCounties={() => setShowCounties((v) => !v)}
+        showTornadoAnalysis={showTornadoAnalysis}
+        onToggleTornadoAnalysis={() => setShowTornadoAnalysis((v) => !v)}
+        // Advanced Radar Actions
+        onOpenComparison={() => setShowComparison(true)}
+        onOpenCrossSection={() => {
+          const cut = computeVerticalCrossSection(
+            [currentSite.lon - 0.25, currentSite.lat - 0.15],
+            [currentSite.lon + 0.35, currentSite.lat + 0.25],
+            currentSite.lat,
+            currentSite.lon
+          );
+          setCrossSectionData(cut);
+        }}
+        onOpenBeamViz={() => alert(`Radar Antenna Height: ${currentSite.elevation || 174}m AGL\nBeam Width: 0.95°\nVCP: 212 Convective`)}
+        onOpen3DAnalysis={() => alert('3D Volumetric Radar initialized for ' + currentSite.id)}
       />
 
       {/* 5. RIGHT-SIDE CURRENT ALERTS PANEL */}
@@ -195,6 +265,15 @@ export default function MesoVortexWorkstation() {
             console.log('Inspecting alert:', alert);
           }}
         />
+      )}
+
+      {/* Advanced Modals */}
+      {showComparison && (
+        <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowComparison(false)} />
+      )}
+
+      {crossSectionData && (
+        <CrossSectionModal data={crossSectionData} onClose={() => setCrossSectionData(null)} />
       )}
 
       {/* Slide-out Menu */}
@@ -209,10 +288,24 @@ export default function MesoVortexWorkstation() {
               <button onClick={() => setMenuOpen(false)}>✕</button>
             </div>
             <div className="space-y-2 text-xs font-bold">
-              <div className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer">📡 NEXRAD Station Directory</div>
-              <div className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer">🎨 Radar Color Tables</div>
-              <div className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer">📁 Gibson Ridge Placefile Suite</div>
-              <div className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer">⚙ App Settings &amp; Audio</div>
+              <div
+                onClick={() => {
+                  setRadarSite('KLZK');
+                  setMenuOpen(false);
+                }}
+                className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"
+              >
+                📡 Center on Little Rock (KLZK)
+              </div>
+              <div
+                onClick={() => {
+                  setRadarSite('KTLX');
+                  setMenuOpen(false);
+                }}
+                className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"
+              >
+                📡 Center on Oklahoma City (KTLX)
+              </div>
             </div>
           </div>
           <div className="flex-1" onClick={() => setMenuOpen(false)} />
