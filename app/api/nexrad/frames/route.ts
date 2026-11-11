@@ -103,8 +103,9 @@ export async function GET(request: Request) {
     const stamp = `${y}${m}${d}${h}${min}`;
     const ageMinutes = Math.round((now.getTime() - date.getTime()) / 60000);
 
-    let frameTile = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-${stamp}/{z}/{x}/{y}.png`;
-    if (['mesh', 'azshear', 'cc', 'zdr', 'kdp', 'hhc', 'qpe', 'min_cc'].includes(productKey)) {
+        let frameTile = `${IEM_TILE}/ridge::${site.radarId}-${productCode}-${stamp}/{z}/{x}/{y}.png`;
+    // Static products (no time-stepped tiles available) use live tile URL
+    if (['mesh', 'azshear', 'cc', 'zdr', 'kdp', 'hhc', 'qpe', 'min_cc', 'sw'].includes(productKey)) {
       frameTile = tileUrl;
     }
     // Max Reflectivity: use reflectivity base frames (client-side compositing handles the max)
