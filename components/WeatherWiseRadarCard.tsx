@@ -9,39 +9,45 @@ type Props = {
   siteName: string;
   product: RadarProduct;
   tilt: string;
+  maxRefWindow: number;
   isPlaying: boolean;
   onSelectProduct: (p: RadarProduct) => void;
   onSelectTilt: (t: string) => void;
+  onSelectMaxRefWindow: (w: number) => void;
   onTogglePlay: () => void;
 };
 
 const PRODUCTS: { key: RadarProduct; label: string; iconBg: string }[] = [
   { key: 'ref', label: 'Reflectivity', iconBg: 'from-blue-600 via-green-500 to-red-600' },
-  { key: 'ref_x', label: 'Reflectivity X', iconBg: 'from-cyan-500 via-yellow-400 to-rose-600' },
   { key: 'max_ref', label: 'Max Reflectivity', iconBg: 'from-amber-400 via-red-600 to-purple-700' },
+  { key: 'ref_x', label: 'Reflectivity X', iconBg: 'from-cyan-500 via-yellow-400 to-rose-600' },
   { key: 'vel', label: 'Velocity', iconBg: 'from-emerald-500 via-slate-800 to-red-600' },
   { key: 'cc', label: 'Correlation Coefficient', iconBg: 'from-rose-500 via-purple-600 to-blue-500' },
   { key: 'zdr', label: 'Differential Reflectivity', iconBg: 'from-purple-500 via-amber-400 to-cyan-400' },
 ];
 
 const TILTS = ['0.5', '0.9', '1.3', '1.8', '2.4', '3.1'];
+const MAX_REF_WINDOWS = [5, 10, 20, 30];
 
 export function WeatherWiseRadarCard({
   siteId,
   product,
   tilt,
+  maxRefWindow,
   isPlaying,
   onSelectProduct,
   onSelectTilt,
+  onSelectMaxRefWindow,
   onTogglePlay,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
   const [tiltMenuOpen, setTiltMenuOpen] = useState(false);
 
   const activeProdInfo = PRODUCTS.find((p) => p.key === product) || PRODUCTS[0];
+  const isMaxRef = product === 'max_ref' || product === 'ref_x';
 
   return (
-    <div className="absolute bottom-5 left-5 z-30 w-[340px] rounded-2xl bg-white/95 text-slate-800 shadow-2xl backdrop-blur-md border border-slate-200/80 font-sans select-none overflow-hidden transition-all">
+    <div className="absolute bottom-5 left-5 z-30 w-[350px] rounded-2xl bg-white/95 text-slate-800 shadow-2xl backdrop-blur-md border border-slate-200/80 font-sans select-none overflow-hidden transition-all">
       {/* Top Header Row */}
       <div className="flex items-center justify-between p-3 border-b border-slate-100">
         <div className="flex flex-col">
@@ -49,6 +55,11 @@ export function WeatherWiseRadarCard({
             <span>{siteId}</span>
             <span className="text-slate-400">·</span>
             <span>{activeProdInfo.label}</span>
+            {isMaxRef && (
+              <span className="rounded bg-purple-600 text-white text-[9px] px-1.5 py-0.5 font-black uppercase tracking-wider">
+                SWATH
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1 text-[11px] text-slate-500 font-medium">
             <span>Scan At: 21:18:32</span>
@@ -61,21 +72,21 @@ export function WeatherWiseRadarCard({
         <div className="flex items-center gap-1">
           <button
             onClick={() => setExpanded((v) => !v)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
+            className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
             title="Expand / Collapse"
           >
             {expanded ? '▾' : '▴'}
           </button>
           <button
             onClick={() => setTiltMenuOpen((v) => !v)}
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
+            className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
             title="Elevation Tilts"
           >
             🔲
           </button>
           <button
             onClick={onTogglePlay}
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition font-bold"
+            className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition font-bold cursor-pointer"
             title={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? '❚❚' : '▶'}
@@ -97,7 +108,7 @@ export function WeatherWiseRadarCard({
             <div className="relative">
               <button
                 onClick={() => setTiltMenuOpen((v) => !v)}
-                className="flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 px-3 py-1 font-bold text-slate-700 border border-slate-300 transition"
+                className="flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 px-3 py-1 font-bold text-slate-700 border border-slate-300 transition cursor-pointer"
               >
                 <span>{tilt}°</span>
                 <span className="text-[10px]">▾</span>
@@ -112,7 +123,7 @@ export function WeatherWiseRadarCard({
                         onSelectTilt(t);
                         setTiltMenuOpen(false);
                       }}
-                      className={`w-full rounded-lg py-1 text-center text-xs font-bold transition ${
+                      className={`w-full rounded-lg py-1 text-center text-xs font-bold transition cursor-pointer ${
                         tilt === t ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100'
                       }`}
                     >
@@ -123,6 +134,31 @@ export function WeatherWiseRadarCard({
               )}
             </div>
           </div>
+
+          {/* Rolling History Window Selector (When in Max Reflectivity mode) */}
+          {isMaxRef && (
+            <div className="rounded-xl border border-purple-200 bg-purple-50/70 p-2.5 space-y-1.5 animate-fade-in">
+              <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
+                <span>Maximum Composite Rolling Window:</span>
+                <span className="font-mono text-purple-700">{maxRefWindow} Scans</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1">
+                {MAX_REF_WINDOWS.map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => onSelectMaxRefWindow(w)}
+                    className={`rounded-lg py-1 text-[11px] font-bold transition cursor-pointer ${
+                      maxRefWindow === w
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'bg-white text-purple-800 border border-purple-200 hover:bg-purple-100'
+                    }`}
+                  >
+                    {w} Scans
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Product Thumbnail Grid */}
           <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100">
@@ -138,11 +174,10 @@ export function WeatherWiseRadarCard({
                       : 'border-transparent hover:bg-slate-100'
                   }`}
                 >
-                  {/* Thumbnail Image Box */}
                   <div
-                    className={`h-11 w-11 rounded-xl bg-gradient-to-br ${p.iconBg} shadow-inner border border-white/60 mb-1 flex items-center justify-center text-[10px] font-bold text-white drop-shadow`}
+                    className={`h-11 w-11 rounded-xl bg-gradient-to-br ${p.iconBg} shadow-inner border border-white/60 mb-1 flex items-center justify-center text-[10px] font-black text-white drop-shadow`}
                   >
-                    {p.key.toUpperCase()}
+                    {p.key === 'max_ref' ? 'MAX' : p.key.toUpperCase()}
                   </div>
                   <span className={`text-[10px] font-semibold leading-tight line-clamp-2 ${active ? 'text-blue-700' : 'text-slate-600'}`}>
                     {p.label}
