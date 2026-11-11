@@ -140,7 +140,6 @@ function createRangeRingGeoJSON(lat: number, lon: number) {
   });
   return { type: 'FeatureCollection', features };
 }
-
 export function RadarMap({
   product = 'ref',
   radarSite = 'KLZK',
@@ -335,8 +334,7 @@ export function RadarMap({
     },
     [radarSite, showRadarSites, onSelectSite]
   );
-
-  useEffect(() => {
+    useEffect(() => {
     if (!containerRef.current) return;
 
     if (mapRef.current) {
