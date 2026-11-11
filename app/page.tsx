@@ -49,7 +49,100 @@ export default function MesoVortexWorkstation() {
 
   const currentSite =
     RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
-
+      {/* PRODUCT-SPECIFIC LEGEND STRIP */}
+      <aside aria-label="Product legend" className="flex h-[22px] shrink-0 items-center justify-between border-t border-slate-800 bg-slate-950 px-3 text-[9px] font-mono">
+        <span className="font-bold text-slate-400 whitespace-nowrap">
+          {product === 'max_ref' ? `MAX REF (${maxRefWindow} scans)` :
+           product === 'ref' ? 'REF (dBZ)' :
+           product === 'ref_x' ? 'REF X (dBZ)' :
+           product === 'vel' ? 'VEL (kt)' :
+           product === 'srvel' ? 'SRV (kt)' :
+           product === 'norm_vel' ? 'NRV (kt)' :
+           product === 'sw' ? 'SW (m/s)' :
+           product === 'cc' ? 'CC (0-1)' :
+           product === 'min_cc' ? 'MCC (0-1)' :
+           product === 'zdr' ? 'ZDR (dB)' :
+           product === 'kdp' ? 'KDP (deg/km)' :
+           product === 'tops' ? 'TOPS (kft)' :
+           product === 'vil' ? 'VIL (kg/m²)' :
+           product === 'hhc' ? 'HHC' :
+           product === 'qpe' ? 'QPE (in)' :
+           product === 'mesh' ? 'MESH (in)' :
+           product === 'azshear' ? 'AzShear (s⁻¹)' :
+           product.toUpperCase()}
+        </span>
+        <div className="mx-3 flex-1 h-2 overflow-hidden rounded-sm flex border border-white/10">
+          {product === 'vel' || product === 'srvel' || product === 'norm_vel' ? (
+            <>
+              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#00cc00]" /><div className="flex-1 bg-[#009900]" />
+              <div className="flex-1 bg-[#006600]" /><div className="flex-1 bg-[#333333]" /><div className="flex-1 bg-[#660000]" />
+              <div className="flex-1 bg-[#990000]" /><div className="flex-1 bg-[#cc0000]" /><div className="flex-1 bg-[#ff0000]" />
+            </>
+          ) : product === 'cc' || product === 'min_cc' ? (
+            <>
+              <div className="flex-1 bg-[#000080]" /><div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#00ffff]" />
+              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" />
+              <div className="flex-1 bg-[#ff0000]" /><div className="flex-1 bg-[#ffffff]" />
+            </>
+          ) : product === 'zdr' ? (
+            <>
+              <div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#0080ff]" /><div className="flex-1 bg-[#00ffff]" />
+              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" />
+              <div className="flex-1 bg-[#ff0000]" /><div className="flex-1 bg-[#800000]" />
+            </>
+          ) : product === 'tops' ? (
+            <>
+              <div className="flex-1 bg-[#000080]" /><div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#00ffff]" />
+              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" />
+              <div className="flex-1 bg-[#ff0000]" /><div className="flex-1 bg-[#ffffff]" />
+            </>
+          ) : product === 'vil' || product === 'qpe' ? (
+            <>
+              <div className="flex-1 bg-[#000080]" /><div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#00ffff]" />
+              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" />
+              <div className="flex-1 bg-[#ff0000]" /><div className="flex-1 bg-[#800000]" />
+            </>
+          ) : product === 'mesh' ? (
+            <>
+              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" />
+              <div className="flex-1 bg-[#ff0000]" /><div className="flex-1 bg-[#ff00ff]" />
+            </>
+          ) : product === 'azshear' ? (
+            <>
+              <div className="flex-1 bg-[#000080]" /><div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#00ffff]" />
+              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff0000]" />
+            </>
+          ) : product === 'hhc' ? (
+            <>
+              <div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#00ffff]" /><div className="flex-1 bg-[#00ff00]" />
+              <div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" /><div className="flex-1 bg-[#ff0000]" />
+              <div className="flex-1 bg-[#ffffff]" />
+            </>
+          ) : (
+            <>
+              <div className="flex-1 bg-[#04e9e7]" /><div className="flex-1 bg-[#019ff4]" /><div className="flex-1 bg-[#0300f4]" />
+              <div className="flex-1 bg-[#02fd02]" /><div className="flex-1 bg-[#01c501]" /><div className="flex-1 bg-[#008e00]" />
+              <div className="flex-1 bg-[#fdf802]" /><div className="flex-1 bg-[#e5bc00]" /><div className="flex-1 bg-[#fd9500]" />
+              <div className="flex-1 bg-[#fd0000]" /><div className="flex-1 bg-[#d40000]" /><div className="flex-1 bg-[#f800fd]" />
+              <div className="flex-1 bg-[#9854c6]" /><div className="flex-1 bg-[#ffffff]" />
+            </>
+          )}
+        </div>
+        <span className="text-slate-400 whitespace-nowrap">
+          {product === 'vel' || product === 'srvel' || product === 'norm_vel' ? '-60 • -30 • 0 • 30 • 60 kt' :
+           product === 'cc' || product === 'min_cc' ? '0.2 • 0.5 • 0.8 • 0.95 • 1.0' :
+           product === 'zdr' ? '-2 • 0 • 2 • 4 • 6 dB' :
+           product === 'kdp' ? '0 • 2 • 4 • 6 deg/km' :
+           product === 'tops' ? '5 • 15 • 25 • 35 • 45 kft' :
+           product === 'vil' ? '0 • 10 • 25 • 50 • 75' :
+           product === 'qpe' ? '0.1 • 0.5 • 1.0 • 2.0 in' :
+           product === 'mesh' ? '0.5" • 1.0" • 1.75" • 2.5" • 4.0"+' :
+           product === 'azshear' ? '0.005 • 0.010 • 0.015 • 0.020+ s⁻¹' :
+           product === 'hhc' ? 'Rain • Hail • Snow • Ice' :
+           product === 'sw' ? '0 • 2 • 4 • 6 • 8 m/s' :
+           '5 • 15 • 30 • 45 • 60 • 70+'}
+        </span>
+      </aside>
   // Fetch real-time NWS Alerts
   useEffect(() => {
     fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert')
