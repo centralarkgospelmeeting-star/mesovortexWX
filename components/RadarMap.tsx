@@ -5,13 +5,13 @@ import * as maplibregl from 'maplibre-gl';
 import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { RADAR_SITES } from '../lib/radar-config';
+import { computeMaxReflectivityCanvas } from '../lib/max-reflectivity';
 
-export type ModeTab = 'Radar' | '3D Radar' | 'Composite' | 'Satellite' | 'Models' | 'Outlooks';
+export type ModeTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
 export type BasemapType = 'satellite-streets' | 'custom-weather' | 'mapbox' | 'satellite';
 export type BasemapId = BasemapType;
 export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
 
-// Exported for RightDock and Spotter modules
 export type SpotterPin = {
   id: string;
   hazardType: string;
@@ -28,6 +28,7 @@ export interface RadarMapProps {
   radarSite?: string;
   mode?: ModeTab | string;
   tilt?: string;
+  maxRefWindow?: number; // 5, 10, 20, or 30 scans
   basemap?: BasemapType | string;
   spcDay?: 'Day 1' | 'Day 2' | 'Day 3' | string;
   spotterReports?: SpotterPin[];
@@ -89,6 +90,7 @@ export function RadarMap({
   radarSite = 'KLZK',
   mode = 'Radar',
   tilt = '0.5',
+  maxRefWindow = 10,
   basemap = 'satellite-streets',
   onSelectSite,
 }: RadarMapProps) {
@@ -177,99 +179,47 @@ export function RadarMap({
               'line-width': 1.8,
             },
           });
-
-          map.on('click', WARNINGS_FILL_ID, (e) => {
-            const props = e.features?.[0]?.properties;
-            if (!props) return;
-
-            const isTor = props.event === 'Tornado Warning';
-            new maplibregl.Popup({ closeButton: true, offset: 12 })
-              .setLngLat(e.lngLat)
-              .setHTML(
-                `<div style="font-family:system-ui;padding:6px;max-width:260px;color:#0f172a;">
-                  <span style="background:${isTor ? '#dc2626' : '#d97706'};color:#fff;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:900;text-transform:uppercase;">
-                    ${props.event}
-                  </span>
-                  <div style="font-size:12px;font-weight:800;margin-top:6px;line-height:1.3;">
-                    ${props.headline || props.description || 'Active Warning'}
-                  </div>
-                  <div style="font-size:10px;color:#64748b;margin-top:4px;">
-                    ${props.areaDesc || ''}
-                  </div>
-                </div>`
-              )
-              .addTo(map);
-          });
         }
       })
       .catch((err) => console.warn('[Warnings Notice]:', err));
   }, []);
 
-  // 2. SPC Convective Outlooks
-  const updateSpcOutlooks = useCallback((map: MapLibreMap) => {
-    fetch('https://www.spc.noaa.gov/products/outlook/day1otlk_cat.lyr.geojson')
-      .then((res) => res.json())
-      .then((data) => {
-        const source = map.getSource(SPC_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-        if (source) {
-          source.setData(data);
-        } else {
-          map.addSource(SPC_SOURCE_ID, { type: 'geojson', data });
-
-          map.addLayer({
-            id: SPC_FILL_ID,
-            type: 'fill',
-            source: SPC_SOURCE_ID,
-            paint: {
-              'fill-color': [
-                'match',
-                ['get', 'LABEL'],
-                'TSTM', '#c1e9c1',
-                'MRGL', '#7fc57f',
-                'SLGT', '#f6f67d',
-                'ENH', '#edbf69',
-                'MDT', '#e56d6d',
-                'HIGH', '#ff66ff',
-                'rgba(0,0,0,0)',
-              ],
-              'fill-opacity': 0.22,
-            },
-          });
-
-          map.addLayer({
-            id: SPC_LINE_ID,
-            type: 'line',
-            source: SPC_SOURCE_ID,
-            paint: {
-              'line-color': [
-                'match',
-                ['get', 'LABEL'],
-                'TSTM', '#81c784',
-                'MRGL', '#4caf50',
-                'SLGT', '#fbc02d',
-                'ENH', '#f57c00',
-                'MDT', '#d32f2f',
-                'HIGH', '#aa00ff',
-                'rgba(255,255,255,0.4)',
-              ],
-              'line-width': 2,
-            },
-          });
-        }
-      })
-      .catch((err) => console.warn('[SPC Notice]:', err));
-  }, []);
-
-  // 3. High-Definition Radar Layer
+  // 2. High-Definition Radar Layer & Max Reflectivity Composite Swath
   const updateRadar = useCallback(
-    (map: MapLibreMap) => {
+    async (map: MapLibreMap) => {
       let tileUrl = '';
 
+      // Mode: National Composite
       if (mode === 'Composite') {
         tileUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
-      } else if (mode === 'Satellite') {
+      }
+      // Mode: Satellite Cloud Layer
+      else if (mode === 'Satellite') {
         tileUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-east-vis-1km-900913/{z}/{x}/{y}.png';
-      } else {
+      }
+      // MAX REFLECTIVITY COMPOSITE: Computes per-pixel peak dBZ over the rolling window
+      else if (product === 'max_ref' || product === 'ref_x') {
+        try {
+          // Fetch the scan history for this station
+          const res = await fetch(
+            `/api/nexrad/frames?site=${encodeURIComponent(site.radarId)}&product=ref&tilt=${encodeURIComponent(tilt)}`,
+            { cache: 'no-store' }
+          );
+          const data = await res.json();
+          const frames = data.frames || [];
+
+          // Take the rolling window of scans (last 5, 10, 20, or 30 scans)
+          const targetFrames = frames.slice(-maxRefWindow).map((f: any) => f.tileUrl);
+
+          // Compute the per-pixel maximum composite swath
+          const compositeDataUri = await computeMaxReflectivityCanvas(targetFrames);
+          tileUrl = compositeDataUri || data.latestTileUrl;
+        } catch {
+          tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::${site.radarId}-N0B-0/{z}/{x}/{y}.png`;
+        }
+      }
+      // Standard Live Single-Site Products
+      else {
         let productCode = 'N0B';
         if (product === 'vel') {
           productCode = tilt === '0.9' ? 'N1U' : tilt === '1.3' ? 'N2U' : 'N0U';
@@ -283,6 +233,8 @@ export function RadarMap({
 
         tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::${site.radarId}-${productCode}-0/{z}/{x}/{y}.png`;
       }
+
+      if (!tileUrl) return;
 
       if (map.getLayer(RADAR_LAYER_ID)) map.removeLayer(RADAR_LAYER_ID);
       if (map.getSource(RADAR_SOURCE_ID)) map.removeSource(RADAR_SOURCE_ID);
@@ -302,17 +254,17 @@ export function RadarMap({
           type: 'raster',
           source: RADAR_SOURCE_ID,
           paint: {
-            'raster-opacity': 0.88,
+            'raster-opacity': product === 'max_ref' ? 0.95 : 0.88,
             'raster-fade-duration': 0,
           },
         },
         beforeId
       );
     },
-    [mode, product, tilt, site.radarId]
+    [mode, product, tilt, maxRefWindow, site.radarId]
   );
 
-  // 4. WeatherWise On-Map Radar Tower Pills
+  // 3. WeatherWise On-Map Radar Tower Pills
   const renderTowerPills = useCallback(
     (map: MapLibreMap) => {
       RADAR_SITES.forEach((s) => {
@@ -363,7 +315,6 @@ export function RadarMap({
       map.resize();
 
       updateWarnings(map);
-      updateSpcOutlooks(map);
       updateRadar(map);
       renderTowerPills(map);
     });
@@ -375,13 +326,14 @@ export function RadarMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basemap]);
 
+  // Update on product, tilt, or rolling window change
   useEffect(() => {
     if (mapRef.current && mapReady) {
       updateRadar(mapRef.current);
-      updateSpcOutlooks(mapRef.current);
     }
-  }, [product, tilt, mapReady, updateRadar, updateSpcOutlooks]);
+  }, [product, tilt, maxRefWindow, mapReady, updateRadar]);
 
+  // Station camera tracking
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
