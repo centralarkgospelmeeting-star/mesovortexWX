@@ -2,17 +2,67 @@
 
 import { useState } from 'react';
 
-type Props = {
+export type ProductKey =
+  | 'ref'
+  | 'max_ref'
+  | 'ref_x'
+  | 'vel'
+  | 'srvel'
+  | 'norm_vel'
+  | 'sw'
+  | 'cc'
+  | 'min_cc'
+  | 'zdr'
+  | 'kdp'
+  | 'tops'
+  | 'vil'
+  | 'hhc'
+  | 'qpe';
+
+export type Props = {
   siteId: string;
   siteName: string;
   product: string;
   tilt: string;
-  maxRefWindow?: number;
   isPlaying: boolean;
-  onSelectProduct: (p: string) => void;
+  onSelectProduct: (p: any) => void;
   onSelectTilt: (t: string) => void;
-  onSelectMaxRefWindow?: (w: number) => void;
   onTogglePlay: () => void;
+
+  // Max Reflectivity Window
+  maxRefWindow?: number;
+  onSelectMaxRefWindow?: (w: number) => void;
+
+  // Display Controls (All Optional)
+  gateFilter?: number;
+  onChangeGateFilter?: (val: number) => void;
+  opacity?: number;
+  onChangeOpacity?: (val: number) => void;
+  smoothing?: boolean;
+  onToggleSmoothing?: () => void;
+  colorTable?: string;
+  onChangeColorTable?: (table: string) => void;
+
+  // Map Overlays (All Optional)
+  showLightning?: boolean;
+  onToggleLightning?: () => void;
+  showStormTracks?: boolean;
+  onToggleStormTracks?: () => void;
+  showRadarSites?: boolean;
+  onToggleRadarSites?: () => void;
+  showRangeRings?: boolean;
+  onToggleRangeRings?: () => void;
+  showCounties?: boolean;
+  onToggleCounties?: () => void;
+  showTornadoAnalysis?: boolean;
+  onToggleTornadoAnalysis?: () => void;
+
+  // Advanced Actions (All Optional)
+  onOpenComparison?: () => void;
+  onOpenCrossSection?: () => void;
+  onOpenBeamViz?: () => void;
+  onOpen3DAnalysis?: () => void;
+  [key: string]: any;
 };
 
 const PRODUCT_GROUPS: {
@@ -63,12 +113,12 @@ export function WeatherWiseRadarCard({
   siteId,
   product,
   tilt,
-  maxRefWindow = 10,
   isPlaying,
   onSelectProduct,
   onSelectTilt,
-  onSelectMaxRefWindow,
   onTogglePlay,
+  maxRefWindow = 10,
+  onSelectMaxRefWindow,
 }: Props) {
   const [expanded, setExpanded] = useState(true);
   const [tiltMenuOpen, setTiltMenuOpen] = useState(false);
@@ -101,18 +151,21 @@ export function WeatherWiseRadarCard({
           <button
             onClick={() => setExpanded((v) => !v)}
             className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer text-xs"
+            title="Expand / Collapse"
           >
             {expanded ? '▾' : '▴'}
           </button>
           <button
             onClick={() => setTiltMenuOpen((v) => !v)}
             className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer text-xs"
+            title="Elevation Tilts"
           >
             🔲
           </button>
           <button
             onClick={onTogglePlay}
             className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition font-bold cursor-pointer text-xs"
+            title={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? '❚❚' : '▶'}
           </button>
@@ -225,3 +278,5 @@ export function WeatherWiseRadarCard({
     </div>
   );
 }
+
+export default WeatherWiseRadarCard;
