@@ -10,6 +10,19 @@ import { computeMaxReflectivityCanvas, interpolateReflectivityFrames } from '../
 export type ModeTab = 'Radar' | '3D Radar' | 'Composite' | 'Satellite' | 'Models' | 'Outlooks';
 export type BasemapType = 'satellite-streets' | 'custom-weather' | 'mapbox' | 'satellite';
 export type BasemapId = BasemapType;
+export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
+
+// Exported for RightDock and Spotter modules
+export type SpotterPin = {
+  id: string;
+  hazardType: string;
+  description: string;
+  hailSize?: string;
+  lat: number;
+  lon: number;
+  timestamp: string;
+  callsign: string;
+};
 
 export interface RadarMapProps {
   product?: string;
@@ -19,7 +32,10 @@ export interface RadarMapProps {
   maxRefWindow?: number;
   basemap?: BasemapType | string;
   spcDay?: 'Day 1' | 'Day 2' | 'Day 3' | string;
+  spotterReports?: SpotterPin[];
   onSelectSite?: (siteId: string) => void;
+  onMapClickCoordinates?: (coords: [number, number]) => void;
+  [key: string]: any;
 }
 
 const MAPBOX_TOKEN =
@@ -203,7 +219,6 @@ export function RadarMap({
       } else if (mode === 'Satellite') {
         tileUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-east-vis-1km-900913/{z}/{x}/{y}.png';
       } else if (product === 'max_ref') {
-        // True Rolling Max dBZ Swath
         try {
           const res = await fetch(
             `/api/nexrad/frames?site=${encodeURIComponent(site.radarId)}&product=ref&tilt=${encodeURIComponent(tilt)}`,
@@ -218,7 +233,6 @@ export function RadarMap({
           tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::${site.radarId}-N0B-0/{z}/{x}/{y}.png`;
         }
       } else if (product === 'ref_x') {
-        // Reflectivity X: True Temporal Sub-Frame Interpolation
         try {
           const res = await fetch(
             `/api/nexrad/frames?site=${encodeURIComponent(site.radarId)}&product=ref&tilt=${encodeURIComponent(tilt)}`,
@@ -235,7 +249,6 @@ export function RadarMap({
           tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::${site.radarId}-N0B-0/{z}/{x}/{y}.png`;
         }
       } else {
-        // Query API route to resolve exact NWS Level III product codes
         try {
           const res = await fetch(
             `/api/nexrad/frames?site=${encodeURIComponent(site.radarId)}&product=${encodeURIComponent(product)}&tilt=${encodeURIComponent(tilt)}`,
