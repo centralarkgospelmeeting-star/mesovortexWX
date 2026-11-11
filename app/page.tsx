@@ -189,7 +189,7 @@ export default function MesoVortexWorkstation() {
 
       {/* 3. FULL MAP CANVAS */}
       <div className="absolute inset-0">
-                <RadarMap
+        <RadarMap
           product={product}
           radarSite={radarSite}
           mode={tab}
@@ -219,7 +219,6 @@ export default function MesoVortexWorkstation() {
         onSelectProduct={(p) => setProduct(p)}
         onSelectTilt={(t) => setTilt(t)}
         onTogglePlay={() => setIsPlaying((p) => !p)}
-        // Display controls
         gateFilter={gateFilter}
         onChangeGateFilter={(val) => setGateFilter(val)}
         opacity={opacity}
@@ -228,7 +227,6 @@ export default function MesoVortexWorkstation() {
         onToggleSmoothing={() => setSmoothing((v) => !v)}
         colorTable={colorTable}
         onChangeColorTable={(tbl) => setColorTable(tbl)}
-        // Map Overlays
         showLightning={showLightning}
         onToggleLightning={() => setShowLightning((v) => !v)}
         showStormTracks={showStormTracks}
@@ -241,7 +239,6 @@ export default function MesoVortexWorkstation() {
         onToggleCounties={() => setShowCounties((v) => !v)}
         showTornadoAnalysis={showTornadoAnalysis}
         onToggleTornadoAnalysis={() => setShowTornadoAnalysis((v) => !v)}
-        // Advanced Radar Actions
         onOpenComparison={() => setShowComparison(true)}
         onOpenCrossSection={() => {
           const cut = computeVerticalCrossSection(
