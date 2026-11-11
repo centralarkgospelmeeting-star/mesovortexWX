@@ -3,12 +3,26 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { RadarMap, BasemapType } from '../components/RadarMap';
-import { WeatherWiseRadarCard, ProductKey } from '../components/WeatherWiseRadarCard';
+import { WeatherWiseRadarCard } from '../components/WeatherWiseRadarCard';
 import { WeatherWiseAlertsPanel, WeatherAlertItem } from '../components/WeatherWiseAlertsPanel';
-import { SynchronizedQuadView } from '../components/SynchronizedQuadView';
-import { CrossSectionModal } from '../components/CrossSectionModal';
-import { computeVerticalCrossSection, CrossSectionResult } from '../lib/cross-section';
 import { RADAR_SITES } from '../lib/radar-config';
+
+type RadarProduct =
+  | 'ref'
+  | 'max_ref'
+  | 'ref_x'
+  | 'vel'
+  | 'srvel'
+  | 'norm_vel'
+  | 'sw'
+  | 'cc'
+  | 'min_cc'
+  | 'zdr'
+  | 'kdp'
+  | 'tops'
+  | 'vil'
+  | 'hhc'
+  | 'qpe';
 
 type TopTab = 'Radar' | 'Composite' | 'Satellite' | 'Outlooks';
 type SpcDay = 'Day 1' | 'Day 2' | 'Day 3';
@@ -16,31 +30,14 @@ type SpcDay = 'Day 1' | 'Day 2' | 'Day 3';
 export default function MesoVortexWorkstation() {
   const [tab, setTab] = useState<TopTab>('Radar');
   const [spcDay, setSpcDay] = useState<SpcDay>('Day 1');
-  const [product, setProduct] = useState<ProductKey>('ref');
+  const [product, setProduct] = useState<RadarProduct>('ref');
   const [tilt, setTilt] = useState('0.5');
   const [radarSite, setRadarSite] = useState('KLZK');
+  const [maxRefWindow, setMaxRefWindow] = useState(10); // Rolling window: 5, 10, 20, or 30 scans
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Basemap state
+  // Basemap State
   const [basemap, setBasemap] = useState<BasemapType>('satellite-streets');
-
-  // Display Controls
-  const [gateFilter, setGateFilter] = useState(5);
-  const [opacity, setOpacity] = useState(0.88);
-  const [smoothing, setSmoothing] = useState(false);
-  const [colorTable, setColorTable] = useState('nws');
-
-  // Overlays
-  const [showLightning, setShowLightning] = useState(true);
-  const [showStormTracks, setShowStormTracks] = useState(true);
-  const [showRadarSites, setShowRadarSites] = useState(true);
-  const [showRangeRings, setShowRangeRings] = useState(true);
-  const [showCounties, setShowCounties] = useState(true);
-  const [showTornadoAnalysis, setShowTornadoAnalysis] = useState(true);
-
-  // Advanced Modals
-  const [showComparison, setShowComparison] = useState(false);
-  const [crossSectionData, setCrossSectionData] = useState<CrossSectionResult | null>(null);
 
   // Alerts Panel state
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -49,100 +46,7 @@ export default function MesoVortexWorkstation() {
 
   const currentSite =
     RADAR_SITES.find((s) => s.id === radarSite) || RADAR_SITES[0];
-      {/* PRODUCT-SPECIFIC LEGEND STRIP */}
-      <aside aria-label="Product legend" className="flex h-[22px] shrink-0 items-center justify-between border-t border-slate-800 bg-slate-950 px-3 text-[9px] font-mono">
-        <span className="font-bold text-slate-400 whitespace-nowrap">
-          {product === 'max_ref' ? `MAX REF (${maxRefWindow} scans)` :
-           product === 'ref' ? 'REF (dBZ)' :
-           product === 'ref_x' ? 'REF X (dBZ)' :
-           product === 'vel' ? 'VEL (kt)' :
-           product === 'srvel' ? 'SRV (kt)' :
-           product === 'norm_vel' ? 'NRV (kt)' :
-           product === 'sw' ? 'SW (m/s)' :
-           product === 'cc' ? 'CC (0-1)' :
-           product === 'min_cc' ? 'MCC (0-1)' :
-           product === 'zdr' ? 'ZDR (dB)' :
-           product === 'kdp' ? 'KDP (deg/km)' :
-           product === 'tops' ? 'TOPS (kft)' :
-           product === 'vil' ? 'VIL (kg/m²)' :
-           product === 'hhc' ? 'HHC' :
-           product === 'qpe' ? 'QPE (in)' :
-           product === 'mesh' ? 'MESH (in)' :
-           product === 'azshear' ? 'AzShear (s⁻¹)' :
-           product.toUpperCase()}
-        </span>
-        <div className="mx-3 flex-1 h-2 overflow-hidden rounded-sm flex border border-white/10">
-          {product === 'vel' || product === 'srvel' || product === 'norm_vel' ? (
-            <>
-              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#00cc00]" /><div className="flex-1 bg-[#009900]" />
-              <div className="flex-1 bg-[#006600]" /><div className="flex-1 bg-[#333333]" /><div className="flex-1 bg-[#660000]" />
-              <div className="flex-1 bg-[#990000]" /><div className="flex-1 bg-[#cc0000]" /><div className="flex-1 bg-[#ff0000]" />
-            </>
-          ) : product === 'cc' || product === 'min_cc' ? (
-            <>
-              <div className="flex-1 bg-[#000080]" /><div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#00ffff]" />
-              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" />
-              <div className="flex-1 bg-[#ff0000]" /><div className="flex-1 bg-[#ffffff]" />
-            </>
-          ) : product === 'zdr' ? (
-            <>
-              <div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#0080ff]" /><div className="flex-1 bg-[#00ffff]" />
-              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" />
-              <div className="flex-1 bg-[#ff0000]" /><div className="flex-1 bg-[#800000]" />
-            </>
-          ) : product === 'tops' ? (
-            <>
-              <div className="flex-1 bg-[#000080]" /><div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#00ffff]" />
-              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" />
-              <div className="flex-1 bg-[#ff0000]" /><div className="flex-1 bg-[#ffffff]" />
-            </>
-          ) : product === 'vil' || product === 'qpe' ? (
-            <>
-              <div className="flex-1 bg-[#000080]" /><div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#00ffff]" />
-              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" />
-              <div className="flex-1 bg-[#ff0000]" /><div className="flex-1 bg-[#800000]" />
-            </>
-          ) : product === 'mesh' ? (
-            <>
-              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" />
-              <div className="flex-1 bg-[#ff0000]" /><div className="flex-1 bg-[#ff00ff]" />
-            </>
-          ) : product === 'azshear' ? (
-            <>
-              <div className="flex-1 bg-[#000080]" /><div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#00ffff]" />
-              <div className="flex-1 bg-[#00ff00]" /><div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff0000]" />
-            </>
-          ) : product === 'hhc' ? (
-            <>
-              <div className="flex-1 bg-[#0000ff]" /><div className="flex-1 bg-[#00ffff]" /><div className="flex-1 bg-[#00ff00]" />
-              <div className="flex-1 bg-[#ffff00]" /><div className="flex-1 bg-[#ff8000]" /><div className="flex-1 bg-[#ff0000]" />
-              <div className="flex-1 bg-[#ffffff]" />
-            </>
-          ) : (
-            <>
-              <div className="flex-1 bg-[#04e9e7]" /><div className="flex-1 bg-[#019ff4]" /><div className="flex-1 bg-[#0300f4]" />
-              <div className="flex-1 bg-[#02fd02]" /><div className="flex-1 bg-[#01c501]" /><div className="flex-1 bg-[#008e00]" />
-              <div className="flex-1 bg-[#fdf802]" /><div className="flex-1 bg-[#e5bc00]" /><div className="flex-1 bg-[#fd9500]" />
-              <div className="flex-1 bg-[#fd0000]" /><div className="flex-1 bg-[#d40000]" /><div className="flex-1 bg-[#f800fd]" />
-              <div className="flex-1 bg-[#9854c6]" /><div className="flex-1 bg-[#ffffff]" />
-            </>
-          )}
-        </div>
-        <span className="text-slate-400 whitespace-nowrap">
-          {product === 'vel' || product === 'srvel' || product === 'norm_vel' ? '-60 • -30 • 0 • 30 • 60 kt' :
-           product === 'cc' || product === 'min_cc' ? '0.2 • 0.5 • 0.8 • 0.95 • 1.0' :
-           product === 'zdr' ? '-2 • 0 • 2 • 4 • 6 dB' :
-           product === 'kdp' ? '0 • 2 • 4 • 6 deg/km' :
-           product === 'tops' ? '5 • 15 • 25 • 35 • 45 kft' :
-           product === 'vil' ? '0 • 10 • 25 • 50 • 75' :
-           product === 'qpe' ? '0.1 • 0.5 • 1.0 • 2.0 in' :
-           product === 'mesh' ? '0.5" • 1.0" • 1.75" • 2.5" • 4.0"+' :
-           product === 'azshear' ? '0.005 • 0.010 • 0.015 • 0.020+ s⁻¹' :
-           product === 'hhc' ? 'Rain • Hail • Snow • Ice' :
-           product === 'sw' ? '0 • 2 • 4 • 6 • 8 m/s' :
-           '5 • 15 • 30 • 45 • 60 • 70+'}
-        </span>
-      </aside>
+
   // Fetch real-time NWS Alerts
   useEffect(() => {
     fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert')
@@ -167,54 +71,89 @@ export default function MesoVortexWorkstation() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#070c14] select-none font-sans">
       
-      {/* 1. TOP EDGE RAINBOW THREAT SCALE */}
+      {/* 1. TOP EDGE LEGEND BAR (Dynamic Unit & Product Scale) */}
       <div className="absolute top-0 left-0 right-0 z-40 h-5 flex text-[9px] font-black text-slate-900 shadow-md">
-        <div className="flex-1 bg-[#c1e9c1] flex items-center justify-center">General Risk</div>
-        <div className="flex-1 bg-[#7fc57f] flex items-center justify-center">Marginal Risk</div>
-        <div className="flex-1 bg-[#f6f67d] flex items-center justify-center">Slight Risk</div>
-        <div className="flex-1 bg-[#edbf69] flex items-center justify-center">Enhanced Risk</div>
-        <div className="flex-1 bg-[#e56d6d] flex items-center justify-center text-white">Moderate Risk</div>
-        <div className="flex-1 bg-[#ff66ff] flex items-center justify-center text-white">High Risk</div>
+        {product === 'max_ref' ? (
+          <>
+            <div className="w-52 bg-purple-700 text-white flex items-center justify-center tracking-wider uppercase font-mono px-2">
+              ⚡ MAX REF · {maxRefWindow} SCANS COMPOSITE
+            </div>
+            <div className="flex-1 bg-[#04e9e7] flex items-center justify-center">5 dBZ</div>
+            <div className="flex-1 bg-[#02fd02] flex items-center justify-center">30 dBZ</div>
+            <div className="flex-1 bg-[#fdf802] flex items-center justify-center">45 dBZ</div>
+            <div className="flex-1 bg-[#fd0000] flex items-center justify-center text-white">55 dBZ Hail</div>
+            <div className="flex-1 bg-[#f800fd] flex items-center justify-center text-white">65 dBZ Core</div>
+            <div className="flex-1 bg-[#ffffff] flex items-center justify-center text-slate-950">75+ dBZ Swath</div>
+          </>
+        ) : product === 'ref_x' ? (
+          <>
+            <div className="w-48 bg-cyan-700 text-white flex items-center justify-center tracking-wider uppercase font-mono px-2">
+              ⚡ REFLECTIVITY X · SUB-FRAME LERP
+            </div>
+            <div className="flex-1 bg-[#04e9e7] flex items-center justify-center">5 dBZ</div>
+            <div className="flex-1 bg-[#02fd02] flex items-center justify-center">30 dBZ</div>
+            <div className="flex-1 bg-[#fdf802] flex items-center justify-center">45 dBZ</div>
+            <div className="flex-1 bg-[#fd0000] flex items-center justify-center text-white">55 dBZ</div>
+            <div className="flex-1 bg-[#f800fd] flex items-center justify-center text-white">65 dBZ</div>
+            <div className="flex-1 bg-[#ffffff] flex items-center justify-center text-slate-950">75+ dBZ</div>
+          </>
+        ) : product === 'vel' || product === 'srvel' || product === 'norm_vel' ? (
+          <>
+            <div className="w-36 bg-slate-900 text-white flex items-center justify-center tracking-wider uppercase font-mono px-2 border-r border-slate-700">
+              VELOCITY (KT)
+            </div>
+            <div className="flex-1 bg-[#00ffff] flex items-center justify-center text-slate-950">-64 kt In</div>
+            <div className="flex-1 bg-[#10b981] flex items-center justify-center text-white">-25 kt In</div>
+            <div className="flex-1 bg-[#64748b] flex items-center justify-center text-white">0 kt Axis</div>
+            <div className="flex-1 bg-[#f59e0b] flex items-center justify-center text-slate-950">+25 kt Out</div>
+            <div className="flex-1 bg-[#ef4444] flex items-center justify-center text-white">+64 kt Out</div>
+          </>
+        ) : product === 'cc' || product === 'min_cc' ? (
+          <>
+            <div className="w-40 bg-purple-900 text-white flex items-center justify-center tracking-wider uppercase font-mono px-2 border-r border-purple-700">
+              CORRELATION (CC)
+            </div>
+            <div className="flex-1 bg-[#a855f7] flex items-center justify-center text-white">&lt; 0.70 TDS Debris</div>
+            <div className="flex-1 bg-[#ef4444] flex items-center justify-center text-white">0.80 Transition</div>
+            <div className="flex-1 bg-[#f59e0b] flex items-center justify-center text-slate-950">0.88 Hail Mix</div>
+            <div className="flex-1 bg-[#10b981] flex items-center justify-center text-white">0.95 Rain/Hail</div>
+            <div className="flex-1 bg-[#3b82f6] flex items-center justify-center text-white">0.98+ Pure Rain</div>
+          </>
+        ) : product === 'tops' ? (
+          <>
+            <div className="w-44 bg-indigo-900 text-white flex items-center justify-center tracking-wider uppercase font-mono px-2">
+              ECHO TOPS (KFT)
+            </div>
+            <div className="flex-1 bg-[#04e9e7] flex items-center justify-center">15 kft</div>
+            <div className="flex-1 bg-[#02fd02] flex items-center justify-center">25 kft</div>
+            <div className="flex-1 bg-[#fdf802] flex items-center justify-center">35 kft</div>
+            <div className="flex-1 bg-[#fd0000] flex items-center justify-center text-white">45 kft Core</div>
+            <div className="flex-1 bg-[#f800fd] flex items-center justify-center text-white">55 kft Anvil</div>
+            <div className="flex-1 bg-[#ffffff] flex items-center justify-center text-slate-950">65+ kft Overshoot</div>
+          </>
+        ) : (
+          <>
+            <div className="flex-1 bg-[#c1e9c1] flex items-center justify-center">General Risk</div>
+            <div className="flex-1 bg-[#7fc57f] flex items-center justify-center">Marginal Risk</div>
+            <div className="flex-1 bg-[#f6f67d] flex items-center justify-center">Slight Risk</div>
+            <div className="flex-1 bg-[#edbf69] flex items-center justify-center">Enhanced Risk</div>
+            <div className="flex-1 bg-[#e56d6d] flex items-center justify-center text-white">Moderate Risk</div>
+            <div className="flex-1 bg-[#ff66ff] flex items-center justify-center text-white">High Risk</div>
+          </>
+        )}
       </div>
 
       {/* 2. TOP WEATHERWISE NAVIGATION BAR */}
       <div className="pointer-events-none absolute top-7 left-0 right-0 z-40 flex items-center justify-between px-4">
-        {/* Left Action Menu */}
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <button
-            onClick={() => setMenuOpen((v) => !v)}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-xl hover:bg-amber-300 transition font-black text-lg border border-amber-300 cursor-pointer"
-            title="Menu & Layer Selector"
-          >
-            ☰
-          </button>
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
+          className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-xl hover:bg-amber-300 transition font-black text-lg border border-amber-300 cursor-pointer"
+          title="Menu"
+        >
+          ☰
+        </button>
 
-          {/* Quick Basemap Toggle */}
-          <div className="flex items-center rounded-full border border-slate-700 bg-slate-950/90 p-0.5 shadow-xl backdrop-blur-md">
-            <button
-              onClick={() => setBasemap('satellite-streets')}
-              className={`rounded-full px-3 py-1 text-xs font-bold transition cursor-pointer ${
-                basemap === 'satellite-streets'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              🛰️ Satellite
-            </button>
-            <button
-              onClick={() => setBasemap('custom-weather')}
-              className={`rounded-full px-3 py-1 text-xs font-bold transition cursor-pointer ${
-                basemap === 'custom-weather'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              🎨 Custom Mapbox
-            </button>
-          </div>
-        </div>
-
-        {/* Center Floating White Pill With MesoVortex Logo */}
+        {/* Center Floating White Pill */}
         <div className="pointer-events-auto flex flex-col items-center">
           <div className="flex items-center gap-2 rounded-full bg-white px-3 py-1 shadow-2xl border border-slate-200">
             <div
@@ -232,6 +171,10 @@ export default function MesoVortexWorkstation() {
               <span>MesoVortex</span>
               <span className="text-[10px] text-slate-400">▾</span>
             </div>
+
+            <button className="text-slate-400 hover:text-slate-600 px-1 text-xs cursor-pointer">
+              🔍
+            </button>
 
             {/* Mode Switcher Tabs */}
             <div className="flex items-center gap-1 font-bold text-xs">
@@ -280,70 +223,32 @@ export default function MesoVortexWorkstation() {
         </button>
       </div>
 
-      {/* 3. FULL MAP CANVAS */}
+      {/* 3. FULL MAP CANVAS (Supports Live Radar & Max Ref Swaths) */}
       <div className="absolute inset-0">
         <RadarMap
           product={product}
           radarSite={radarSite}
           mode={tab}
           tilt={tilt}
+          maxRefWindow={maxRefWindow}
+          basemap={basemap}
           spcDay={spcDay}
-          radarOpacity={opacity}
-          gateFilter={gateFilter}
-          smoothing={smoothing}
-          colorTable={colorTable}
-          showLightning={showLightning}
-          showStormTracks={showStormTracks}
-          showRadarSites={showRadarSites}
-          showRangeRings={showRangeRings}
-          showCounties={showCounties}
-          showTornadoAnalysis={showTornadoAnalysis}
           onSelectSite={(id) => setRadarSite(id)}
         />
       </div>
 
-      {/* 4. EXPANDED WEATHERWISE RADAR CARD (Wireframe 2) */}
+      {/* 4. BOTTOM-LEFT FLOATING RADAR CARD */}
       <WeatherWiseRadarCard
         siteId={currentSite.id}
         siteName={currentSite.name}
         product={product}
         tilt={tilt}
+        maxRefWindow={maxRefWindow}
         isPlaying={isPlaying}
-        onSelectProduct={(p) => setProduct(p)}
+        onSelectProduct={(p) => setProduct(p as RadarProduct)}
         onSelectTilt={(t) => setTilt(t)}
+        onSelectMaxRefWindow={(w) => setMaxRefWindow(w)}
         onTogglePlay={() => setIsPlaying((p) => !p)}
-        gateFilter={gateFilter}
-        onChangeGateFilter={(val) => setGateFilter(val)}
-        opacity={opacity}
-        onChangeOpacity={(val) => setOpacity(val)}
-        smoothing={smoothing}
-        onToggleSmoothing={() => setSmoothing((v) => !v)}
-        colorTable={colorTable}
-        onChangeColorTable={(tbl) => setColorTable(tbl)}
-        showLightning={showLightning}
-        onToggleLightning={() => setShowLightning((v) => !v)}
-        showStormTracks={showStormTracks}
-        onToggleStormTracks={() => setShowStormTracks((v) => !v)}
-        showRadarSites={showRadarSites}
-        onToggleRadarSites={() => setShowRadarSites((v) => !v)}
-        showRangeRings={showRangeRings}
-        onToggleRangeRings={() => setShowRangeRings((v) => !v)}
-        showCounties={showCounties}
-        onToggleCounties={() => setShowCounties((v) => !v)}
-        showTornadoAnalysis={showTornadoAnalysis}
-        onToggleTornadoAnalysis={() => setShowTornadoAnalysis((v) => !v)}
-        onOpenComparison={() => setShowComparison(true)}
-        onOpenCrossSection={() => {
-          const cut = computeVerticalCrossSection(
-            [currentSite.lon - 0.25, currentSite.lat - 0.15],
-            [currentSite.lon + 0.35, currentSite.lat + 0.25],
-            currentSite.lat,
-            currentSite.lon
-          );
-          setCrossSectionData(cut);
-        }}
-        onOpenBeamViz={() => alert(`Radar Antenna Height: ${currentSite.elevation || 174}m AGL\nBeam Width: 0.95°\nVCP: 212 Convective`)}
-        onOpen3DAnalysis={() => alert('3D Volumetric Radar initialized for ' + currentSite.id)}
       />
 
       {/* 5. RIGHT-SIDE CURRENT ALERTS PANEL */}
@@ -355,15 +260,6 @@ export default function MesoVortexWorkstation() {
             console.log('Inspecting alert:', alert);
           }}
         />
-      )}
-
-      {/* Advanced Modals */}
-      {showComparison && (
-        <SynchronizedQuadView radarSite={radarSite} onClose={() => setShowComparison(false)} />
-      )}
-
-      {crossSectionData && (
-        <CrossSectionModal data={crossSectionData} onClose={() => setCrossSectionData(null)} />
       )}
 
       {/* Slide-out Menu */}
@@ -380,21 +276,21 @@ export default function MesoVortexWorkstation() {
             <div className="space-y-2 text-xs font-bold">
               <div
                 onClick={() => {
-                  setRadarSite('KLZK');
+                  setBasemap('satellite-streets');
                   setMenuOpen(false);
                 }}
                 className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"
               >
-                📡 Center on Little Rock (KLZK)
+                🛰️ Mapbox Satellite Streets
               </div>
               <div
                 onClick={() => {
-                  setRadarSite('KTLX');
+                  setBasemap('custom-weather');
                   setMenuOpen(false);
                 }}
                 className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"
               >
-                📡 Center on Oklahoma City (KTLX)
+                🎨 Custom Weather Style
               </div>
             </div>
           </div>
