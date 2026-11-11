@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   let loopAvailable = true;
 
     // --- Product → IEM ridge/MRMS endpoint mapping ---
-  if (productKey === 'mesh') {
+   if (productKey === 'mesh') {
     productCode = 'MESH';
     tileUrl = `${IEM_TILE}/mrms::MESH_Max60min/{z}/{x}/{y}.png`;
     loopAvailable = false;
@@ -48,8 +48,38 @@ export async function GET(request: Request) {
     productCode = 'N0S';
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0S-0/{z}/{x}/{y}.png`;
   } else if (productKey === 'sw') {
-    productCode = 'N0W';
-    tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0W-0/{z}/{x}/{y}.png`;
+    productCode = 'SW';
+    tileUrl = `${IEM_TILE}/mrms::SpectrumWidth/{z}/{x}/{y}.png`;
+    loopAvailable = false;
+  } else if (productKey === 'tops') {
+    productCode = 'EET';
+    tileUrl = `${IEM_TILE}/mrms::EchoTop18/{z}/{x}/{y}.png`;
+    loopAvailable = false;
+  } else if (productKey === 'vil') {
+    productCode = 'DVL';
+    tileUrl = `${IEM_TILE}/mrms::VIL/{z}/{x}/{y}.png`;
+    loopAvailable = false;
+  } else if (productKey === 'cc' || productKey === 'min_cc') {
+    productCode = 'N0C';
+    tileUrl = `${IEM_TILE}/mrms::RhoHV/{z}/{x}/{y}.png`;
+    loopAvailable = false;
+  } else if (productKey === 'zdr') {
+    productCode = 'N0X';
+    tileUrl = `${IEM_TILE}/mrms::ReflectivityAtLowestAltitude/{z}/{x}/{y}.png`;
+    loopAvailable = false;
+  } else if (productKey === 'kdp') {
+    productCode = 'N0K';
+    tileUrl = `${IEM_TILE}/mrms::MultiSensorQPE01H/{z}/{x}/{y}.png`;
+    loopAvailable = false;
+  } else if (productKey === 'hhc') {
+    productCode = 'HHC';
+    tileUrl = `${IEM_TILE}/mrms::HydrometeorClassification/{z}/{x}/{y}.png`;
+    loopAvailable = false;
+  } else if (productKey === 'qpe') {
+    productCode = 'DPR';
+    tileUrl = `${IEM_TILE}/mrms::MultiSensorQPE01H/{z}/{x}/{y}.png`;
+    loopAvailable = false;
+  }
     // MRMS fallback: spectrum width not in MRMS, but reflectivity composite as backup
     tileUrl = `${IEM_TILE}/ridge::${site.radarId}-N0W-0/{z}/{x}/{y}.png`;
   } else if (productKey === 'tops') {
