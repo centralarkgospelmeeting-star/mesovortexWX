@@ -6,13 +6,12 @@ import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { RADAR_SITES } from '../lib/radar-config';
 import { computeMaxReflectivityCanvas, interpolateReflectivityFrames } from '../lib/max-reflectivity';
+import { WarningAlert } from './WarningDrawerRight';
 
 export type ModeTab = 'Radar' | '3D Radar' | 'Composite' | 'Satellite' | 'Models' | 'Outlooks';
 export type BasemapType = 'satellite-streets' | 'custom-weather' | 'mapbox' | 'satellite';
 export type BasemapId = BasemapType;
-export type PaletteType = 'nws' | 'radarscope' | 'cod' | 'smooth' | 'couplet' | 'palFile';
 
-// Exported for RightDock and Spotter modules
 export type SpotterPin = {
   id: string;
   hazardType: string;
@@ -32,9 +31,15 @@ export interface RadarMapProps {
   maxRefWindow?: number;
   basemap?: BasemapType | string;
   spcDay?: 'Day 1' | 'Day 2' | 'Day 3' | string;
-  spotterReports?: SpotterPin[];
+  radarOpacity?: number;
+  showRangeRings?: boolean;
+  showRadarPills?: boolean;
+  showLightning?: boolean;
+  showStormTracks?: boolean;
+  selectedWarning?: WarningAlert | null;
   onSelectSite?: (siteId: string) => void;
-  onMapClickCoordinates?: (coords: [number, number]) => void;
+  onSelectWarningFromMap?: (warning: WarningAlert) => void;
+  targetCoords?: [number, number] | null;
   [key: string]: any;
 }
 
@@ -58,9 +63,16 @@ const WARNINGS_SOURCE_ID = 'mv-warnings-source';
 const WARNINGS_FILL_ID = 'mv-warnings-fill';
 const WARNINGS_LINE_OUTER_ID = 'mv-warnings-line-outer';
 const WARNINGS_LINE_INNER_ID = 'mv-warnings-line-inner';
+const WARNING_HIGHLIGHT_SOURCE_ID = 'mv-warning-highlight-source';
+const WARNING_HIGHLIGHT_LAYER_ID = 'mv-warning-highlight-layer';
+const RANGE_RINGS_SOURCE_ID = 'mv-range-rings-source';
+const RANGE_RINGS_LAYER_ID = 'mv-range-rings-layer';
+const RANGE_RINGS_LABEL_ID = 'mv-range-rings-label';
 const SPC_SOURCE_ID = 'mv-spc-source';
 const SPC_FILL_ID = 'mv-spc-fill';
 const SPC_LINE_ID = 'mv-spc-line';
+const LIGHTNING_SOURCE_ID = 'mv-lightning-source';
+const LIGHTNING_LAYER_ID = 'mv-lightning-layer';
 
 function buildMapboxRasterStyle(basemap: BasemapType | string): StyleSpecification {
   const isCustom = basemap === 'custom-weather' || basemap === 'mapbox';
@@ -87,6 +99,56 @@ function buildMapboxRasterStyle(basemap: BasemapType | string): StyleSpecificati
   };
 }
 
+// Generates concentric circles around radar site in nautical miles
+function generateRangeRingsGeoJSON(lon: number, lat: number, distancesNm: number[] = [50, 100, 150]) {
+  const features: any[] = [];
+  const points = 64;
+
+  distancesNm.forEach((nm) => {
+    const km = nm * 1.852;
+    const coords: [number, number][] = [];
+    const earthRadiusKm = 6371;
+
+    for (let i = 0; i <= points; i++) {
+      const angle = (i * 360) / points;
+      const rad = (angle * Math.PI) / 180;
+      const latRad = (lat * Math.PI) / 180;
+      const lonRad = (lon * Math.PI) / 180;
+      const distRad = km / earthRadiusKm;
+
+      const pLat = Math.asin(
+        Math.sin(latRad) * Math.cos(distRad) +
+          Math.cos(latRad) * Math.sin(distRad) * Math.cos(rad)
+      );
+      const pLon =
+        lonRad +
+        Math.atan2(
+          Math.sin(rad) * Math.sin(distRad) * Math.cos(latRad),
+          Math.cos(distRad) - Math.sin(latRad) * Math.sin(pLat)
+        );
+
+      coords.push([(pLon * 180) / Math.PI, (pLat * 180) / Math.PI]);
+    }
+
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: coords,
+      },
+      properties: {
+        distanceNm: nm,
+        label: `${nm} nm`,
+      },
+    });
+  });
+
+  return {
+    type: 'FeatureCollection',
+    features,
+  };
+}
+
 export function RadarMap({
   product = 'ref',
   radarSite = 'KLZK',
@@ -94,10 +156,20 @@ export function RadarMap({
   tilt = '0.5',
   maxRefWindow = 10,
   basemap = 'satellite-streets',
+  spcDay = 'Day 1',
+  radarOpacity = 0.88,
+  showRangeRings = true,
+  showRadarPills = true,
+  showLightning = false,
+  showStormTracks = false,
+  selectedWarning = null,
   onSelectSite,
+  onSelectWarningFromMap,
+  targetCoords,
 }: RadarMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const markersRef = useRef<maplibregl.Marker[]>([]);
   const [mapReady, setMapReady] = useState(false);
 
   const site =
@@ -105,111 +177,264 @@ export function RadarMap({
     RADAR_SITES[0];
 
   // 1. Live NWS Warning Polygons
-  const updateWarnings = useCallback((map: MapLibreMap) => {
-    fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert')
-      .then((res) => res.json())
-      .then((geojson) => {
-        const polygonFeatures = (geojson.features || []).filter((f: any) => {
-          const event = f.properties?.event || '';
-          return (
-            f.geometry &&
-            (event.includes('Warning') || event.includes('Tornado') || event.includes('Thunderstorm'))
-          );
+  const updateWarnings = useCallback(
+    (map: MapLibreMap) => {
+      fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert')
+        .then((res) => res.json())
+        .then((geojson) => {
+          const polygonFeatures = (geojson.features || []).filter((f: any) => {
+            const event = f.properties?.event || '';
+            return (
+              f.geometry &&
+              (event.includes('Warning') || event.includes('Tornado') || event.includes('Thunderstorm'))
+            );
+          });
+
+          const validGeoJSON = {
+            type: 'FeatureCollection',
+            features: polygonFeatures,
+          };
+
+          const source = map.getSource(WARNINGS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+          if (source) {
+            source.setData(validGeoJSON as any);
+          } else {
+            map.addSource(WARNINGS_SOURCE_ID, {
+              type: 'geojson',
+              data: validGeoJSON as any,
+            });
+
+            map.addLayer({
+              id: WARNINGS_FILL_ID,
+              type: 'fill',
+              source: WARNINGS_SOURCE_ID,
+              paint: {
+                'fill-color': [
+                  'match',
+                  ['get', 'event'],
+                  'Tornado Warning', '#dc2626',
+                  'Severe Thunderstorm Warning', '#f59e0b',
+                  'Flash Flood Warning', '#10b981',
+                  '#3b82f6',
+                ],
+                'fill-opacity': 0.22,
+              },
+            });
+
+            map.addLayer({
+              id: WARNINGS_LINE_OUTER_ID,
+              type: 'line',
+              source: WARNINGS_SOURCE_ID,
+              paint: {
+                'line-color': [
+                  'match',
+                  ['get', 'event'],
+                  'Tornado Warning', '#dc2626',
+                  'Severe Thunderstorm Warning', '#ffffff',
+                  'Flash Flood Warning', '#059669',
+                  '#1d4ed8',
+                ],
+                'line-width': 3.5,
+              },
+            });
+
+            map.addLayer({
+              id: WARNINGS_LINE_INNER_ID,
+              type: 'line',
+              source: WARNINGS_SOURCE_ID,
+              paint: {
+                'line-color': [
+                  'match',
+                  ['get', 'event'],
+                  'Tornado Warning', '#f87171',
+                  'Severe Thunderstorm Warning', '#fbbf24',
+                  'Flash Flood Warning', '#34d399',
+                  '#60a5fa',
+                ],
+                'line-width': 1.8,
+              },
+            });
+
+            map.on('click', WARNINGS_FILL_ID, (e) => {
+              const feat = e.features?.[0];
+              if (!feat) return;
+              const props = feat.properties;
+              if (onSelectWarningFromMap && props) {
+                onSelectWarningFromMap({
+                  id: feat.id?.toString() || props.id || `alert-${Date.now()}`,
+                  event: props.event || 'Severe Warning',
+                  headline: props.headline || props.description || 'Active Warning',
+                  severity: props.severity || 'Immediate',
+                  areaDesc: props.areaDesc || '',
+                  sent: props.sent || new Date().toISOString(),
+                  expires: props.expires || '',
+                  wfo: props.senderName?.split('/')?.[0] || 'NWS',
+                  lat: e.lngLat.lat,
+                  lon: e.lngLat.lng,
+                  geometry: feat.geometry,
+                });
+              }
+            });
+          }
+        })
+        .catch((err) => console.warn('[Warnings Notice]:', err));
+    },
+    [onSelectWarningFromMap]
+  );
+
+  // 2. SPC Convective Outlook Layer (Section 9)
+  const updateSpcOutlooks = useCallback(
+    (map: MapLibreMap) => {
+      if (mode !== 'Outlooks') {
+        if (map.getLayer(SPC_FILL_ID)) map.removeLayer(SPC_FILL_ID);
+        if (map.getLayer(SPC_LINE_ID)) map.removeLayer(SPC_LINE_ID);
+        if (map.getSource(SPC_SOURCE_ID)) map.removeSource(SPC_SOURCE_ID);
+        return;
+      }
+
+      const dayNumber = spcDay === 'Day 2' ? '2' : spcDay === 'Day 3' ? '3' : '1';
+      const spcUrl = `https://www.spc.noaa.gov/products/outlook/day${dayNumber}otlk_cat.lyr.geojson`;
+
+      fetch(spcUrl)
+        .then((res) => res.json())
+        .then((geojson) => {
+          const source = map.getSource(SPC_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+          if (source) {
+            source.setData(geojson);
+          } else {
+            map.addSource(SPC_SOURCE_ID, {
+              type: 'geojson',
+              data: geojson,
+            });
+
+            map.addLayer(
+              {
+                id: SPC_FILL_ID,
+                type: 'fill',
+                source: SPC_SOURCE_ID,
+                paint: {
+                  'fill-color': [
+                    'match',
+                    ['get', 'LABEL'],
+                    'TSTM', '#c1e9c1',
+                    'MRGL', '#7fc57f',
+                    'SLGT', '#f6f67d',
+                    'ENH', '#edbf69',
+                    'MDT', '#e56d6d',
+                    'HIGH', '#ff66ff',
+                    '#7fc57f',
+                  ],
+                  'fill-opacity': 0.35,
+                },
+              },
+              map.getLayer(WARNINGS_FILL_ID) ? WARNINGS_FILL_ID : undefined
+            );
+
+            map.addLayer(
+              {
+                id: SPC_LINE_ID,
+                type: 'line',
+                source: SPC_SOURCE_ID,
+                paint: {
+                  'line-color': [
+                    'match',
+                    ['get', 'LABEL'],
+                    'TSTM', '#88c588',
+                    'MRGL', '#439943',
+                    'SLGT', '#d3d344',
+                    'ENH', '#ca8a04',
+                    'MDT', '#b91c1c',
+                    'HIGH', '#c026d3',
+                    '#439943',
+                  ],
+                  'line-width': 2.5,
+                },
+              },
+              SPC_FILL_ID
+            );
+          }
+        })
+        .catch((err) => console.warn('[SPC Fetch Notice]:', err));
+    },
+    [mode, spcDay]
+  );
+
+  // 3. Range Rings Layer (Section 4)
+  const updateRangeRings = useCallback(
+    (map: MapLibreMap) => {
+      if (!showRangeRings) {
+        if (map.getLayer(RANGE_RINGS_LAYER_ID)) map.removeLayer(RANGE_RINGS_LAYER_ID);
+        if (map.getSource(RANGE_RINGS_SOURCE_ID)) map.removeSource(RANGE_RINGS_SOURCE_ID);
+        return;
+      }
+
+      const ringsGeoJSON = generateRangeRingsGeoJSON(site.lon, site.lat, [50, 100, 150]);
+      const source = map.getSource(RANGE_RINGS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+
+      if (source) {
+        source.setData(ringsGeoJSON as any);
+      } else {
+        map.addSource(RANGE_RINGS_SOURCE_ID, {
+          type: 'geojson',
+          data: ringsGeoJSON as any,
         });
 
-        const validGeoJSON = {
-          type: 'FeatureCollection',
-          features: polygonFeatures,
-        };
+        map.addLayer({
+          id: RANGE_RINGS_LAYER_ID,
+          type: 'line',
+          source: RANGE_RINGS_SOURCE_ID,
+          paint: {
+            'line-color': '#00ffff',
+            'line-width': 1.2,
+            'line-dasharray': [4, 4],
+            'line-opacity': 0.45,
+          },
+        });
+      }
+    },
+    [showRangeRings, site.lon, site.lat]
+  );
 
-        const source = map.getSource(WARNINGS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-        if (source) {
-          source.setData(validGeoJSON as any);
-        } else {
-          map.addSource(WARNINGS_SOURCE_ID, {
-            type: 'geojson',
-            data: validGeoJSON as any,
-          });
+  // 4. Highlight Selected Warning Polygon
+  const updateSelectedWarningHighlight = useCallback(
+    (map: MapLibreMap) => {
+      if (!selectedWarning || !selectedWarning.geometry) {
+        if (map.getLayer(WARNING_HIGHLIGHT_LAYER_ID)) map.removeLayer(WARNING_HIGHLIGHT_LAYER_ID);
+        if (map.getSource(WARNING_HIGHLIGHT_SOURCE_ID)) map.removeSource(WARNING_HIGHLIGHT_SOURCE_ID);
+        return;
+      }
 
-          map.addLayer({
-            id: WARNINGS_FILL_ID,
-            type: 'fill',
-            source: WARNINGS_SOURCE_ID,
-            paint: {
-              'fill-color': [
-                'match',
-                ['get', 'event'],
-                'Tornado Warning', '#dc2626',
-                'Severe Thunderstorm Warning', '#f59e0b',
-                'Flash Flood Warning', '#10b981',
-                '#3b82f6',
-              ],
-              'fill-opacity': 0.18,
-            },
-          });
+      const highlightData = {
+        type: 'Feature',
+        geometry: selectedWarning.geometry,
+        properties: {},
+      };
 
-          map.addLayer({
-            id: WARNINGS_LINE_OUTER_ID,
-            type: 'line',
-            source: WARNINGS_SOURCE_ID,
-            paint: {
-              'line-color': [
-                'match',
-                ['get', 'event'],
-                'Tornado Warning', '#dc2626',
-                'Severe Thunderstorm Warning', '#ffffff',
-                'Flash Flood Warning', '#059669',
-                '#1d4ed8',
-              ],
-              'line-width': 3.5,
-            },
-          });
+      const source = map.getSource(WARNING_HIGHLIGHT_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+      if (source) {
+        source.setData(highlightData as any);
+      } else {
+        map.addSource(WARNING_HIGHLIGHT_SOURCE_ID, {
+          type: 'geojson',
+          data: highlightData as any,
+        });
 
-          map.addLayer({
-            id: WARNINGS_LINE_INNER_ID,
-            type: 'line',
-            source: WARNINGS_SOURCE_ID,
-            paint: {
-              'line-color': [
-                'match',
-                ['get', 'event'],
-                'Tornado Warning', '#f87171',
-                'Severe Thunderstorm Warning', '#fbbf24',
-                'Flash Flood Warning', '#34d399',
-                '#60a5fa',
-              ],
-              'line-width': 1.8,
-            },
-          });
+        map.addLayer({
+          id: WARNING_HIGHLIGHT_LAYER_ID,
+          type: 'line',
+          source: WARNING_HIGHLIGHT_SOURCE_ID,
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': 4.5,
+            'line-opacity': 0.95,
+          },
+        });
+      }
+    },
+    [selectedWarning]
+  );
 
-          map.on('click', WARNINGS_FILL_ID, (e) => {
-            const props = e.features?.[0]?.properties;
-            if (!props) return;
-
-            const isTor = props.event === 'Tornado Warning';
-            new maplibregl.Popup({ closeButton: true, offset: 12 })
-              .setLngLat(e.lngLat)
-              .setHTML(
-                `<div style="font-family:system-ui;padding:6px;max-width:260px;color:#0f172a;">
-                  <span style="background:${isTor ? '#dc2626' : '#d97706'};color:#fff;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:900;text-transform:uppercase;">
-                    ${props.event}
-                  </span>
-                  <div style="font-size:12px;font-weight:800;margin-top:6px;line-height:1.3;">
-                    ${props.headline || props.description || 'Active Warning'}
-                  </div>
-                  <div style="font-size:10px;color:#64748b;margin-top:4px;">
-                    ${props.areaDesc || ''}
-                  </div>
-                </div>`
-              )
-              .addTo(map);
-          });
-        }
-      })
-      .catch((err) => console.warn('[Warnings Notice]:', err));
-  }, []);
-
-  // 2. High-Definition Radar Layer & Swath/Interpolation Engine
+  // 5. High-Definition Radar Layer & Swath/Interpolation Engine
   const updateRadar = useCallback(
     async (map: MapLibreMap) => {
       let tileUrl = '';
@@ -281,19 +506,25 @@ export function RadarMap({
           type: 'raster',
           source: RADAR_SOURCE_ID,
           paint: {
-            'raster-opacity': product === 'max_ref' ? 0.95 : 0.88,
+            'raster-opacity': radarOpacity,
             'raster-fade-duration': 0,
           },
         },
         beforeId
       );
     },
-    [mode, product, tilt, maxRefWindow, site.radarId]
+    [mode, product, tilt, maxRefWindow, site.radarId, radarOpacity]
   );
 
-  // 3. On-Map Station Pills
+  // 6. On-Map Station Pills
   const renderTowerPills = useCallback(
     (map: MapLibreMap) => {
+      // Clear existing markers
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
+
+      if (!showRadarPills) return;
+
       RADAR_SITES.forEach((s) => {
         const isActive = s.id === radarSite || s.radarId === radarSite;
         const pill = document.createElement('div');
@@ -305,12 +536,14 @@ export function RadarMap({
           onSelectSite?.(s.id);
         };
 
-        new maplibregl.Marker({ element: pill })
+        const marker = new maplibregl.Marker({ element: pill })
           .setLngLat([s.lon, s.lat])
           .addTo(map);
+
+        markersRef.current.push(marker);
       });
     },
-    [radarSite, onSelectSite]
+    [radarSite, onSelectSite, showRadarPills]
   );
 
   // Initialize Map
@@ -327,6 +560,7 @@ export function RadarMap({
       style: buildMapboxRasterStyle(basemap),
       center: [-98.5795, 39.8283],
       zoom: 4.4,
+      pitch: mode === '3D Radar' ? 60 : 0,
       attributionControl: { compact: true },
     });
 
@@ -342,6 +576,8 @@ export function RadarMap({
       updateWarnings(map);
       updateRadar(map);
       renderTowerPills(map);
+      updateRangeRings(map);
+      updateSpcOutlooks(map);
     });
 
     return () => {
@@ -351,14 +587,48 @@ export function RadarMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basemap]);
 
-  // Update on product or tilt change
+  // Handle 3D Pitch
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    if (mode === '3D Radar') {
+      map.easeTo({ pitch: 60, bearing: -20, duration: 1000 });
+    } else {
+      map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
+    }
+  }, [mode, mapReady]);
+
+  // Update on product, tilt, or opacity change
   useEffect(() => {
     if (mapRef.current && mapReady) {
       updateRadar(mapRef.current);
     }
-  }, [product, tilt, maxRefWindow, mapReady, updateRadar]);
+  }, [product, tilt, maxRefWindow, radarOpacity, mapReady, updateRadar]);
 
-  // Camera tracking
+  // Update range rings & station pills
+  useEffect(() => {
+    if (mapRef.current && mapReady) {
+      updateRangeRings(mapRef.current);
+      renderTowerPills(mapRef.current);
+    }
+  }, [site.lon, site.lat, showRangeRings, showRadarPills, mapReady, updateRangeRings, renderTowerPills]);
+
+  // Update SPC Outlooks
+  useEffect(() => {
+    if (mapRef.current && mapReady) {
+      updateSpcOutlooks(mapRef.current);
+    }
+  }, [mode, spcDay, mapReady, updateSpcOutlooks]);
+
+  // Update Selected Warning Highlight
+  useEffect(() => {
+    if (mapRef.current && mapReady) {
+      updateSelectedWarningHighlight(mapRef.current);
+    }
+  }, [selectedWarning, mapReady, updateSelectedWarningHighlight]);
+
+  // Camera tracking when radar site changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -367,6 +637,14 @@ export function RadarMap({
       map.flyTo({ center: [site.lon, site.lat], zoom: 7.5, duration: 1100 });
     }
   }, [site.lon, site.lat, radarSite, mapReady]);
+
+  // Fly to target coordinates if requested (e.g. from location search)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !targetCoords) return;
+
+    map.flyTo({ center: targetCoords, zoom: 8, duration: 1200 });
+  }, [targetCoords, mapReady]);
 
   return (
     <div style={{ position: 'absolute', inset: 0, width: '100vw', height: '100vh', overflow: 'hidden' }}>

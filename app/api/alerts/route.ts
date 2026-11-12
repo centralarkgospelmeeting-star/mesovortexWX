@@ -1,3 +1,7 @@
+import { NextResponse } from 'next/server';
+
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const headers = {
     'User-Agent': 'MesoVortexWX/1.0 (centralarkgospelmeeting@gmail.com)'
