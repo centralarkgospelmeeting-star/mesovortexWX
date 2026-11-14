@@ -170,6 +170,11 @@ export function SkewTSoundingModal({ lat, lon, sounding: legacySounding, onClose
     );
   }
 
+  // TypeScript narrowing: only success remains
+  if (state.status !== 'success') {
+    return null;
+  }
+
   const sounding = state.data;
   const { indices, levels } = sounding;
 
@@ -184,7 +189,7 @@ export function SkewTSoundingModal({ lat, lon, sounding: legacySounding, onClose
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-extrabold text-white">Atmospheric Sounding &amp; Hodograph</h2>
+                <h2 className="text-base font-extrabold text-white">Atmospheric Sounding & Hodograph</h2>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
                     indices.hazardRating === 'EXTREME TORNADIC'
