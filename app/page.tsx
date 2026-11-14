@@ -154,7 +154,7 @@ export default function MesoVortexWorkstation() {
             f.properties?.headline ||
             f.properties?.description?.slice(0, 85) ||
             'Severe Weather Warning',
-          severity: f.properties?.urgency || 'Immediate',
+          severity: f.properties?.severity || 'Immediate',
           areaDesc: f.properties?.areaDesc || 'Regional Counties',
           sent: f.properties?.sent || new Date().toISOString(),
           expires: f.properties?.expires || '',
@@ -164,6 +164,7 @@ export default function MesoVortexWorkstation() {
 
         setLiveAlerts(items);
 
+        // Check for new Tornado or Severe Thunderstorm Warnings for Announcement Banner
         const criticalAlert = items.find(
           (a) => a.event.includes('Tornado Warning') || a.event.includes('Severe Thunderstorm Warning')
         );
@@ -176,10 +177,12 @@ export default function MesoVortexWorkstation() {
             area: criticalAlert.areaDesc,
           });
 
+          // Play 1050 Hz Siren if enabled
           if (audioSirenEnabled) {
             play1050HzSiren(3);
           }
 
+          // Spoken TTS Announcement if enabled
           if (ttsEnabled && typeof window !== 'undefined' && 'speechSynthesis' in window) {
             const announcementText = `The National Weather Service has issued a ${criticalAlert.event} for ${criticalAlert.areaDesc}.`;
             const utter = new SpeechSynthesisUtterance(announcementText);
@@ -191,6 +194,7 @@ export default function MesoVortexWorkstation() {
       .catch((err) => console.warn('[Alerts Fetch Error]:', err));
   }, [audioSirenEnabled, ttsEnabled, ttsVolume]);
 
+  // Handle Location Search Submit
   const handleSearchLocation = (query: string, matchedSite?: RadarSite) => {
     if (matchedSite) {
       setRadarSite(matchedSite.id);
@@ -198,12 +202,14 @@ export default function MesoVortexWorkstation() {
       return;
     }
 
+    // Check if coordinates format: e.g. "34.74, -92.28"
     const coordParts = query.split(',').map((p) => parseFloat(p.trim()));
     if (coordParts.length === 2 && !isNaN(coordParts[0]) && !isNaN(coordParts[1])) {
       setTargetCoords([coordParts[1], coordParts[0]]);
       return;
     }
 
+    // Try finding closest radar site to search string
     const fallbackSite = RADAR_SITES.find(
       (s) =>
         s.id.toLowerCase().includes(query.toLowerCase()) ||
@@ -216,9 +222,11 @@ export default function MesoVortexWorkstation() {
     }
   };
 
+  // Warning selection handler (Section 10)
   const handleSelectWarning = (alert: WarningAlert) => {
     setSelectedWarning(alert);
 
+    // If warning has geometry coordinates, fly map to center
     if (alert.geometry?.type === 'Polygon' && alert.geometry.coordinates?.[0]?.length) {
       const ring = alert.geometry.coordinates[0];
       const avgLon = ring.reduce((sum: number, c: number[]) => sum + c[0], 0) / ring.length;
@@ -229,6 +237,7 @@ export default function MesoVortexWorkstation() {
     }
   };
 
+  // Locate Me using Browser Geolocation
   const handleLocateMe = () => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -242,11 +251,13 @@ export default function MesoVortexWorkstation() {
     }
   };
 
+  // Reset CONUS view
   const handleResetConus = () => {
     setRadarSite('US');
     setTargetCoords([-98.5795, 39.8283]);
   };
 
+  // Spoken TTS Announcement helper
   const handleSpeakText = (text: string) => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -257,6 +268,7 @@ export default function MesoVortexWorkstation() {
     }
   };
 
+  // Playback timer simulation
   useEffect(() => {
     if (!isPlaying) return;
     const interval = setInterval(() => {
@@ -266,6 +278,7 @@ export default function MesoVortexWorkstation() {
     return () => clearInterval(interval);
   }, [isPlaying, currentFrameIndex]);
 
+  // Generate AI SPC MCD
   const handleGenerateMCD = useCallback(() => {
     setMcdModalOpen(true);
     setMcdLoading(true);
@@ -286,6 +299,7 @@ export default function MesoVortexWorkstation() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#020617] select-none font-sans text-slate-100">
+      {/* 1. UNIVERSAL DATA LEGEND & TEMPORARY ALERT ANNOUNCEMENT BANNER (Sections 2.A & 11) */}
       <UniversalLegend
         type={activeTab === 'Outlooks' ? 'spc' : activeTab === 'Satellite' ? 'satellite' : product}
         activeAnnouncement={activeAnnouncement}
@@ -299,6 +313,7 @@ export default function MesoVortexWorkstation() {
         }}
       />
 
+      {/* 2. MAIN NAVIGATION BAR (Section 2.B) */}
       <MainNavbar
         activeTab={activeTab}
         onSelectTab={(t) => setActiveTab(t)}
@@ -310,6 +325,7 @@ export default function MesoVortexWorkstation() {
         onSelectSpcDay={(d) => setSpcDay(d)}
       />
 
+      {/* 3. MAIN MAP WORKSPACE (Section 2.C) */}
       <div className="absolute inset-0">
         <RadarMap
           product={product}
@@ -334,6 +350,7 @@ export default function MesoVortexWorkstation() {
         />
       </div>
 
+      {/* 4. FLOATING PRODUCT CONTROL PANEL (Sections 3, 4, 5, 6, 7, 8, 9 & Wireframe 2) */}
       <FloatingProductPanel
         tab={activeTab}
         currentSiteId={currentSite.id}
@@ -390,6 +407,7 @@ export default function MesoVortexWorkstation() {
         onSelectSpcDay={(d) => setSpcDay(d)}
       />
 
+      {/* 5. WARNING DRAWER — RIGHT SIDE (Section 10 & Wireframe 3) */}
       <WarningDrawerRight
         isOpen={warningsOpen}
         onClose={() => setWarningsOpen(false)}
@@ -398,12 +416,14 @@ export default function MesoVortexWorkstation() {
         selectedAlertId={selectedWarning?.id}
       />
 
+      {/* 6. WARNING DETAILS — SEPARATE FLOATING MAP WINDOW (Section 10 & Wireframe 4) */}
       <WarningDetailsPopup
         warning={selectedWarning}
         onClose={() => setSelectedWarning(null)}
         onSpeak={handleSpeakText}
       />
 
+      {/* 7. MAIN MENU DRAWER — THREE-LINE BUTTON (Section 12 & Wireframe 5) */}
       <MainMenuDrawer
         isOpen={mainMenuOpen}
         onClose={() => setMainMenuOpen(false)}
@@ -422,13 +442,126 @@ export default function MesoVortexWorkstation() {
         onOpenMetar={() => setMetarOpen(true)}
       />
 
-      {/* Settings and remaining modals - truncated in this restore for size; full file continues with SettingsWorkspace, WeatherAssistant, MCDModal, Hyperlocal, SkewT, CrossSection, Placefiles, Pal, ThreatMatrix, QuadView, METAR */}
+      {/* 8. SETTINGS WORKSPACE (Section 13 & Wireframe 6) */}
+      <SettingsWorkspace
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        basemap={basemap}
+        onSelectBasemap={(b) => setBasemap(b as BasemapType)}
+        units={units}
+        onSelectUnits={(u) => setUnits(u)}
+        audioSirenEnabled={audioSirenEnabled}
+        onToggleAudioSiren={() => setAudioSirenEnabled((v) => !v)}
+        ttsEnabled={ttsEnabled}
+        onToggleTts={() => setTtsEnabled((v) => !v)}
+        ttsVolume={ttsVolume}
+        onChangeTtsVolume={(vol) => setTtsVolume(vol)}
+      />
+
+      {/* 9. AI WEATHER SUITE & ADVANCED WORKSTATION MODALS */}
+      {weatherAssistantOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xl p-4">
+          <div className="w-full max-w-2xl bg-slate-950 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
+            <WeatherAssistant
+              context={{
+                site: currentSite.name,
+                product: product,
+                alerts: liveAlerts.map((a) => a.headline),
+              }}
+              onClose={() => setWeatherAssistantOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {mcdModalOpen && (
+        <MCDModal
+          mcdText={mcdText}
+          loading={mcdLoading}
+          onClose={() => setMcdModalOpen(false)}
+          onRegenerate={handleGenerateMCD}
+        />
+      )}
+
+      {hyperlocalOpen && (
+        <HyperlocalDashboardModal
+          lat={currentSite.lat}
+          lon={currentSite.lon}
+          siteName={currentSite.name}
+          onClose={() => setHyperlocalOpen(false)}
+        />
+      )}
+
       {skewTOpen && (
         <SkewTSoundingModal
           lat={currentSite.lat}
           lon={currentSite.lon}
           onClose={() => setSkewTOpen(false)}
         />
+      )}
+
+      {crossSectionOpen && (
+        <CrossSectionModal
+          data={computeVerticalCrossSection(
+            [currentSite.lon - 0.25, currentSite.lat - 0.25],
+            [currentSite.lon + 0.25, currentSite.lat + 0.25],
+            currentSite.lat,
+            currentSite.lon
+          )}
+          onClose={() => setCrossSectionOpen(false)}
+        />
+      )}
+
+      {placefilesOpen && (
+        <PlacefileManagerModal
+          placefiles={placefiles}
+          onToggle={handleTogglePlacefile}
+          onAdd={handleAddPlacefile}
+          onDelete={handleDeletePlacefile}
+          onClose={() => setPlacefilesOpen(false)}
+        />
+      )}
+
+      {palTableOpen && (
+        <PalColorTableModal
+          onApplyPal={(curve) => {
+            console.log('Applied PAL curve:', curve);
+            setPalTableOpen(false);
+          }}
+          onClose={() => setPalTableOpen(false)}
+        />
+      )}
+
+      {threatMatrixOpen && (
+        <ThreatMatrixPanel
+          onClose={() => setThreatMatrixOpen(false)}
+        />
+      )}
+
+      {quadViewOpen && (
+        <SynchronizedQuadView
+          radarSite={currentSite.id}
+          onClose={() => setQuadViewOpen(false)}
+        />
+      )}
+
+      {metarOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xl p-4">
+          <div className="w-full max-w-4xl bg-slate-950 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl p-4 max-h-[85vh] flex flex-col">
+            <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-800">
+              <h2 className="text-base font-black text-white">Airport METAR Surface Weather Observations</h2>
+              <button
+                onClick={() => setMetarOpen(false)}
+                className="rounded-xl bg-slate-800 px-3 py-1 text-xs text-slate-300 hover:text-white transition cursor-pointer"
+              >
+                ✕ Close
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <METARPanel observations={metarObs} />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
